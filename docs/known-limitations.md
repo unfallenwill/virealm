@@ -27,10 +27,11 @@ Chromium 的 `CHECK` 中止，进程在启动阶段退出，不写入任何 Prof
 
 **中止码随 Chromium 构建而变。** 本机 Chrome 156.0.8078.48 上是
 `STATUS_BREAKPOINT`（`0x80000003`）；GitHub Actions 的 `windows-latest` 运行器上
-装的 Chromium 换了一个构建，同一场景的中止码就不是这个值。因此适配层**不按
-某一个魔数判定**——它按隔离模式判定：受限令牌 / AppContainer 下浏览器在启动
-阶段退出，就归类为 `unsupported_isolation`，并把实际观察到的 `exitCode` 一并
-返回。
+装的 Chromium 换了一个构建，同一场景的中止码是 `0xffff7001`——按 Chromium 源码，
+这是 Crashpad 的 `kCrashExitCodeNoDump`：崩溃处理器在一次启动期 FATAL 之后无法
+写出 dump，于是用这个码结束进程，把底层异常掩盖了。因此适配层**不按某一个魔数
+判定**——它按隔离模式判定：受限令牌 / AppContainer 下浏览器在启动阶段退出，就归类
+为 `unsupported_isolation`，并把实际观察到的 `exitCode` 一并返回。
 
 本机实测（Windows 11 26300 x86_64、非管理员、Chrome 156.0.8078.48）：
 

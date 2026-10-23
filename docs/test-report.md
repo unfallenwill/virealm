@@ -289,18 +289,18 @@
 | --- | --- | --- |
 | 三个 Node 作业在 `actions/setup-node` 处失败（`Unable to locate executable file: pnpm`） | `cache: pnpm` 需要先能调用 pnpm，而 `corepack enable` 排在 setup-node 之后 | 改用 `pnpm/action-setup` 先安装 pnpm，并设置 `COREPACK_ENABLE_DOWNLOAD_PROMPT=0` |
 | `adapter:lint` / `desktop:lint` 报 319 条 "type that could not be resolved" | 类型感知的 ESLint 规则要读兄弟包构建出的 `dist/*.d.ts`，而新克隆的仓库没有 `dist/` | 根 `check` 按依赖拓扑排序并在 lint 前构建依赖；CI 作业同样显式构建 |
-| 受限令牌集成测试在 CI 上失败 | 适配层原先只把 `0x80000003` 判为 `unsupported_isolation`，而 CI 运行器的 Chromium 构建中止码不同 | 改为按隔离模式判定，`exitCode` 随错误返回；用例不再锁定单一魔数 |
+| 受限令牌集成测试在 CI 上失败 | 适配层原先只把 `0x80000003` 判为 `unsupported_isolation`，而 CI 运行器的 Chromium 构建以 `0xffff7001` 中止（Crashpad 的 `kCrashExitCodeNoDump`，即崩溃处理器在一次启动期 FATAL 后无法写 dump 而用它结束进程） | 改为按隔离模式判定，`exitCode` 随错误返回；用例不再锁定单一魔数 |
 
 CI 运行器是 GitHub 的 `windows-latest` / `ubuntu-latest`，其上安装的 Chrome 与
 本机版本不同、运行账户与本机也不同，因此 CI 结果不能替代本机结论：受限令牌
-与 AppContainer 下 Chromium 的中止码在 CI 上被实测为与本机不同，这本身就是
-「该结论只对特定 Chrome 版本成立」的直接证据。
+与 AppContainer 下 Chromium 的中止码在 CI 上被实测为与本机不同（`0xffff7001`
+对 `0x80000003`），这本身就是「该结论只对特定 Chrome 版本成立」的直接证据。
 
-`Contracts (Node)`、`Process Runtime (Windows)` 与
-`Desktop (Windows, Electron + real Chrome)` 三个作业已在 CI 上通过；其中桌面作业
-跑的是真实 Chrome + 真实运行时 + Electron 端到端。
-`Browser Adapter (Windows, real Chrome)` 作业曾在上表第三行的问题上失败，修复后
-复跑的结果见本节末尾的补充记录。CI 仍**不能**覆盖本报告第 6.1 节列出的内容。
+**最终结果**：第 4 次运行（`f91ef89`）四个作业全部通过——
+`Process Runtime (Windows)`、`Contracts (Node)`、
+`Browser Adapter (Windows, real Chrome)`（真实 Chrome + 真实运行时 + 真实受限令牌
+集成用例）、`Desktop (Windows, Electron + real Chrome)`（真实 Chrome + 真实运行时
++ Electron 端到端）。CI 仍**不能**覆盖本报告第 6.1 节列出的内容。
 
 ### 6.3 未验证的行为
 

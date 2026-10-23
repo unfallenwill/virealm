@@ -115,9 +115,10 @@ const verified = await adapter.verifyEnvironmentConfig("work-us");
 
 判定依据是**隔离模式**，不是某一个中止码：`reason` 为 `status_breakpoint` 表示
 确实是 `0x80000003`，否则为 `early_exit_under_restricted_isolation`。中止码随
-Chromium 构建而变（同一台机器上的 Chrome 156.0.8078.48 报 `0x80000003`，CI 运行
-器上的另一个构建报别的值），只认一个魔数会让同一种不兼容在别的机器上重新变成
-笼统错误。实际观察到的 `exitCode` 始终随错误一起返回。
+Chromium 构建而变——本机 Chrome 156.0.8078.48 报 `0x80000003`，CI 运行器上的
+另一个构建报 `0xffff7001`（Crashpad 的 `kCrashExitCodeNoDump`，崩溃处理器在一次
+启动期 FATAL 之后用它结束进程）——只认一个魔数会让同一种不兼容在别的机器上重新
+变成笼统错误。实际观察到的 `exitCode` 始终随错误一起返回。
 
 `managed` 模式不受影响，Chrome 正常启动。适配器**不会**用 `--no-sandbox` 之类
 的手段绕过这个限制——那等于放弃隔离本身。详见
