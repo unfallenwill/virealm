@@ -1,0 +1,11 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_error_extra_001",
+  "ok": false,
+  "error": {
+    "code": "internal",
+    "message": "invariant failed",
+    "retryable": false,
+    "stack": "at runtime::launch (src/launch.rs:42)"
+  }
+}

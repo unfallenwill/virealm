@@ -1,0 +1,8 @@
+{
+  "protocolVersion": 2,
+  "eventId": "evt_invalid_name_001",
+  "event": "process.started",
+  "occurredAtUnixMs": 1768435260000,
+  "processInstanceId": "4242:134129088000000000",
+  "exitCode": 0
+}

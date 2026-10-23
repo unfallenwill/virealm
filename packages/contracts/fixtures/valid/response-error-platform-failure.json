@@ -1,0 +1,15 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_launch_managed_002",
+  "method": "process.launch",
+  "ok": false,
+  "error": {
+    "code": "platform_failure",
+    "message": "CreateProcessW failed (Win32 error 5): Access is denied.",
+    "retryable": false,
+    "details": {
+      "operation": "CreateProcessW",
+      "windowsError": 5
+    }
+  }
+}

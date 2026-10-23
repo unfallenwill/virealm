@@ -1,0 +1,26 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_diagnostics_001",
+  "method": "process.getDiagnostics",
+  "ok": true,
+  "result": {
+    "processInstanceId": "4243:134129100000000000",
+    "diagnostics": [
+      {
+        "timestampUnixMs": 1768436400001,
+        "level": "info",
+        "component": "process.launch",
+        "code": "app_container_profile_ready",
+        "message": "AppContainer profile created",
+        "context": { "profile": "virealm-env-demo-02" }
+      },
+      {
+        "timestampUnixMs": 1768436400002,
+        "level": "warn",
+        "component": "process.job",
+        "code": "network_capabilities_denied",
+        "message": "network capabilities removed from the child token"
+      }
+    ]
+  }
+}

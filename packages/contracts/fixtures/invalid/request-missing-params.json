@@ -1,0 +1,5 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_missing_params_001",
+  "method": "process.getStatus"
+}

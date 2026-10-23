@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.virealm.dev/process/result.schema.json",
+  "title": "Process results",
+  "description": "Result payloads that are not a process status snapshot.",
+  "$defs": {
+    "ProcessDiagnosticsResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["processInstanceId", "diagnostics"],
+      "properties": {
+        "processInstanceId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProcessInstanceId"
+        },
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "../common/diagnostics.schema.json#/$defs/DiagnosticEvent"
+          }
+        }
+      }
+    }
+  }
+}

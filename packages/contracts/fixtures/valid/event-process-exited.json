@@ -1,0 +1,9 @@
+{
+  "protocolVersion": 2,
+  "eventId": "evt_process_exited_001",
+  "event": "process.exited",
+  "occurredAtUnixMs": 1768435260000,
+  "environmentId": "env-demo-01",
+  "processInstanceId": "4242:134129088000000000",
+  "exitCode": 0
+}

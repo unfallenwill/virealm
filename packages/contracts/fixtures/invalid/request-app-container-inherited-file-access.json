@@ -1,0 +1,18 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_container_inherited_001",
+  "method": "process.launch",
+  "params": {
+    "environmentId": "env-demo-02",
+    "executable": "C:\\Program Files\\Virealm\\virealm-child.exe",
+    "arguments": [],
+    "dataDirectory": "C:\\Users\\demo\\AppData\\Local\\Virealm\\env-demo-02",
+    "policy": {
+      "isolation": "app_container",
+      "allowedProgramRoots": ["C:\\Program Files\\Virealm"],
+      "fileAccess": { "kind": "inherited" },
+      "networkAccess": "deny",
+      "containment": { "killOnClose": true }
+    }
+  }
+}

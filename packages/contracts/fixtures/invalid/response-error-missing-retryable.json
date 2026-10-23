@@ -1,0 +1,9 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_error_shape_001",
+  "ok": false,
+  "error": {
+    "code": "invalid_request",
+    "message": "the request is malformed"
+  }
+}

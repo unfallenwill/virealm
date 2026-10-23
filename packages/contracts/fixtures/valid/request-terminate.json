@@ -1,0 +1,8 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_terminate_001",
+  "method": "process.terminate",
+  "params": {
+    "processInstanceId": "4242:134129088000000000"
+  }
+}

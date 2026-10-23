@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.virealm.dev/protocol/event.schema.json",
+  "title": "Events",
+  "description": "Push notifications. The process runtime has no event channel yet; this is the minimal contract for an adapter that adds one. Nothing emits these messages today.",
+  "$defs": {
+    "ProcessExitedEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "eventId",
+        "event",
+        "occurredAtUnixMs",
+        "processInstanceId",
+        "exitCode"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProtocolVersion"
+        },
+        "eventId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/EventId"
+        },
+        "event": { "const": "process.exited" },
+        "occurredAtUnixMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "environmentId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/EnvironmentId"
+        },
+        "processInstanceId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProcessInstanceId"
+        },
+        "exitCode": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      }
+    },
+    "Event": {
+      "oneOf": [{ "$ref": "#/$defs/ProcessExitedEvent" }]
+    }
+  }
+}

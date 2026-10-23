@@ -1,0 +1,5 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_unknown_method_001",
+  "method": "process.kill"
+}

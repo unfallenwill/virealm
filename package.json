@@ -1,0 +1,40 @@
+{
+  "name": "virealm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated browser environments for Windows.",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@12.15.0",
+  "scripts": {
+    "rust:check": "cargo check --workspace",
+    "rust:test": "cargo test --workspace",
+    "rust:fmt": "cargo fmt --all",
+    "rust:fmt:check": "cargo fmt --all --check",
+    "rust:clippy": "cargo clippy --workspace --all-targets -- -D warnings",
+    "contracts:generate": "corepack pnpm --filter @virealm/contracts generate",
+    "contracts:check-generated": "corepack pnpm --filter @virealm/contracts check-generated",
+    "contracts:lint": "corepack pnpm --filter @virealm/contracts lint",
+    "contracts:format:check": "corepack pnpm --filter @virealm/contracts format:check",
+    "contracts:typecheck": "corepack pnpm --filter @virealm/contracts typecheck",
+    "contracts:test": "corepack pnpm --filter @virealm/contracts test",
+    "contracts:build": "corepack pnpm --filter @virealm/contracts build",
+    "adapter:lint": "corepack pnpm --filter @virealm/browser-adapter lint",
+    "adapter:format:check": "corepack pnpm --filter @virealm/browser-adapter format:check",
+    "adapter:typecheck": "corepack pnpm --filter @virealm/browser-adapter typecheck",
+    "adapter:test": "corepack pnpm --filter @virealm/browser-adapter test",
+    "adapter:test:integration": "corepack pnpm --filter @virealm/browser-adapter test:integration",
+    "adapter:build": "corepack pnpm --filter @virealm/browser-adapter build",
+    "adapter:demo": "corepack pnpm --filter @virealm/browser-adapter demo",
+    "desktop:dev": "corepack pnpm --filter @virealm/desktop dev",
+    "desktop:lint": "corepack pnpm --filter @virealm/desktop lint",
+    "desktop:format:check": "corepack pnpm --filter @virealm/desktop format:check",
+    "desktop:typecheck": "corepack pnpm --filter @virealm/desktop typecheck",
+    "desktop:test": "corepack pnpm --filter @virealm/desktop test",
+    "desktop:build": "corepack pnpm --filter @virealm/desktop build",
+    "desktop:test:integration": "corepack pnpm --filter @virealm/desktop test:integration",
+    "desktop:package": "corepack pnpm --filter @virealm/desktop package",
+    "check": "corepack pnpm rust:fmt:check && corepack pnpm rust:clippy && corepack pnpm rust:test && corepack pnpm contracts:check-generated && corepack pnpm contracts:lint && corepack pnpm contracts:format:check && corepack pnpm contracts:typecheck && corepack pnpm contracts:test && corepack pnpm contracts:build && corepack pnpm adapter:lint && corepack pnpm adapter:format:check && corepack pnpm adapter:typecheck && corepack pnpm adapter:test && corepack pnpm adapter:build && corepack pnpm desktop:lint && corepack pnpm desktop:format:check && corepack pnpm desktop:typecheck && corepack pnpm desktop:test && corepack pnpm desktop:build"
+  }
+}

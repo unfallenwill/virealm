@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.virealm.dev/common/errors.schema.json",
+  "title": "Errors",
+  "description": "Stable error categories and the error payload returned by the runtime.",
+  "$defs": {
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "invalid_request",
+        "unsupported_protocol_version",
+        "unknown_method",
+        "policy_violation",
+        "capability_unavailable",
+        "platform_failure",
+        "process_not_found",
+        "unsupported",
+        "internal"
+      ],
+      "description": "Machine-readable category. The first six runtime-originated values mirror ErrorCode in virealm-process-runtime; the remaining values are protocol-level categories."
+    },
+    "ErrorDetails": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 8,
+      "properties": {
+        "operation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Windows API that failed, when the failure came from a platform call."
+        },
+        "windowsError": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Raw Win32 error code. Diagnostic only; do not parse the number to decide behaviour."
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[\\u0020-\\u007E]+$",
+          "description": "Printable method name named by an unknown_method error."
+        },
+        "supportedProtocolVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Protocol version this runtime implements, returned with unsupported_protocol_version."
+        }
+      }
+    },
+    "ContractError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "description": "Short diagnostic description for the caller, not final UI copy and never a raw stack trace."
+        },
+        "retryable": {
+          "type": "boolean",
+          "description": "Whether retrying the exact request is safe. A false value means retry could duplicate a process or repeat a rejected action."
+        },
+        "details": {
+          "$ref": "#/$defs/ErrorDetails"
+        }
+      }
+    }
+  }
+}

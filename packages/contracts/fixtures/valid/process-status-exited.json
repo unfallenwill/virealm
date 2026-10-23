@@ -1,0 +1,17 @@
+{
+  "processInstanceId": "4243:134129100000000000",
+  "pid": 4243,
+  "creationTime100ns": "134129100000000000",
+  "startedAtUnixMs": 1768436400000,
+  "state": { "state": "exited", "exitCode": 0 },
+  "applied": {
+    "mode": "app_container",
+    "jobObjectAttached": true,
+    "appContainerToken": true,
+    "restrictedToken": false,
+    "lowIntegrity": false,
+    "fileAccessRestricted": true,
+    "networkAccess": "deny",
+    "networkCapabilitiesVerified": true
+  }
+}

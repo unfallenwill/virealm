@@ -1,0 +1,168 @@
+/*
+ * Virealm design tokens.
+ *
+ * One restrained palette per theme, semantic status colours, a 4px spacing
+ * scale and two motion durations. Components consume these variables only;
+ * no component defines its own palette.
+ */
+
+:root {
+  --font-ui:
+    "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont,
+    "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", sans-serif;
+  --font-mono:
+    "Cascadia Code", "Cascadia Mono", "SFMono-Regular", Consolas,
+    "Liberation Mono", monospace;
+
+  --text-2xs: 10.5px;
+  --text-xs: 11.5px;
+  --text-sm: 12.5px;
+  --text-md: 13.5px;
+  --text-lg: 15px;
+  --text-xl: 18px;
+  --text-2xl: 24px;
+  --text-3xl: 30px;
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+  --space-10: 64px;
+
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-pill: 999px;
+
+  --control-height: 32px;
+  --control-height-lg: 36px;
+  --row-height: 74px;
+
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 260ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.45, 0.05, 0.55, 0.95);
+}
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-app: #0e1013;
+  --bg-sidebar: #111418;
+  --bg-surface: #14171c;
+  --bg-surface-raised: #191d23;
+  --bg-input: #101317;
+  --bg-hover: #1b2027;
+  --bg-active: #202732;
+  --bg-overlay: rgba(5, 7, 9, 0.62);
+
+  --border-subtle: #20252d;
+  --border-default: #2a3039;
+  --border-strong: #3a424e;
+
+  --text-primary: #e9ecf1;
+  --text-secondary: #a4adba;
+  --text-tertiary: #75808f;
+  --text-disabled: #545d6a;
+  --text-inverse: #0c0f12;
+
+  --accent: #91a7ff;
+  --accent-strong: #a9bbff;
+  --accent-muted: #6d7fce;
+  --accent-soft: rgba(145, 167, 255, 0.11);
+  --accent-border: rgba(145, 167, 255, 0.32);
+  --focus-ring: rgba(145, 167, 255, 0.55);
+
+  --success: #61d3a4;
+  --success-soft: rgba(97, 211, 164, 0.11);
+  --success-border: rgba(97, 211, 164, 0.26);
+  --warning: #e8b96f;
+  --warning-soft: rgba(232, 185, 111, 0.1);
+  --warning-border: rgba(232, 185, 111, 0.26);
+  --danger: #f08282;
+  --danger-strong: #ff9c9c;
+  --danger-soft: rgba(240, 130, 130, 0.1);
+  --danger-border: rgba(240, 130, 130, 0.3);
+  --info: #7cb9e8;
+  --info-soft: rgba(124, 185, 232, 0.1);
+  --info-border: rgba(124, 185, 232, 0.26);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.32);
+  --shadow-panel: -18px 0 60px rgba(0, 0, 0, 0.38);
+  --shadow-toast: 0 16px 40px rgba(0, 0, 0, 0.42);
+
+  --skeleton: linear-gradient(90deg, #191d23 0%, #20262e 45%, #191d23 100%);
+  --scrollbar-thumb: #333b46;
+  --scrollbar-thumb-hover: #444e5b;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-app: #f4f5f7;
+  --bg-sidebar: #eceef2;
+  --bg-surface: #ffffff;
+  --bg-surface-raised: #ffffff;
+  --bg-input: #fbfcfd;
+  --bg-hover: #f0f2f6;
+  --bg-active: #e8ecf5;
+  --bg-overlay: rgba(30, 34, 42, 0.32);
+
+  --border-subtle: #e6e8ee;
+  --border-default: #d8dce4;
+  --border-strong: #c2c8d3;
+
+  --text-primary: #171a20;
+  --text-secondary: #535b68;
+  --text-tertiary: #667080;
+  --text-disabled: #a4abb6;
+  --text-inverse: #ffffff;
+
+  --accent: #4d63d6;
+  --accent-strong: #3f54c2;
+  --accent-muted: #6d7fe0;
+  --accent-soft: rgba(77, 99, 214, 0.08);
+  --accent-border: rgba(77, 99, 214, 0.28);
+  --focus-ring: rgba(77, 99, 214, 0.4);
+
+  --success: #1c7f5c;
+  --success-soft: rgba(28, 127, 92, 0.08);
+  --success-border: rgba(28, 127, 92, 0.24);
+  --warning: #9a6412;
+  --warning-soft: rgba(154, 100, 18, 0.08);
+  --warning-border: rgba(154, 100, 18, 0.24);
+  --danger: #b23c3c;
+  --danger-strong: #992f2f;
+  --danger-soft: rgba(178, 60, 60, 0.07);
+  --danger-border: rgba(178, 60, 60, 0.24);
+  --info: #236a9e;
+  --info-soft: rgba(35, 106, 158, 0.08);
+  --info-border: rgba(35, 106, 158, 0.22);
+
+  --shadow-sm: 0 1px 2px rgba(23, 26, 32, 0.06);
+  --shadow-md: 0 12px 32px rgba(23, 26, 32, 0.1);
+  --shadow-panel: -18px 0 60px rgba(23, 26, 32, 0.14);
+  --shadow-toast: 0 16px 40px rgba(23, 26, 32, 0.16);
+
+  --skeleton: linear-gradient(90deg, #eceef2 0%, #f6f7f9 45%, #eceef2 100%);
+  --scrollbar-thumb: #c7ccd6;
+  --scrollbar-thumb-hover: #aeb5c2;
+}

@@ -1,0 +1,17 @@
+{
+  "processInstanceId": "4242:134129088000000000",
+  "pid": 4242,
+  "creationTime100ns": "134129088000000000",
+  "startedAtUnixMs": 1768435200001,
+  "state": { "state": "running", "pid": 4242 },
+  "applied": {
+    "mode": "managed",
+    "jobObjectAttached": true,
+    "appContainerToken": false,
+    "restrictedToken": false,
+    "lowIntegrity": false,
+    "fileAccessRestricted": false,
+    "networkAccess": "allow",
+    "networkCapabilitiesVerified": false
+  }
+}

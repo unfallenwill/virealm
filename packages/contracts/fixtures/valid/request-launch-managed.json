@@ -1,0 +1,26 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_launch_managed_001",
+  "method": "process.launch",
+  "params": {
+    "environmentId": "env-demo-01",
+    "executable": "C:\\Program Files\\Virealm\\virealm-child.exe",
+    "arguments": ["--mode", "smoke"],
+    "workingDirectory": "C:\\Program Files\\Virealm",
+    "environmentOverrides": {
+      "VIREALM_LOG_LEVEL": "info"
+    },
+    "dataDirectory": "C:\\Users\\demo\\AppData\\Local\\Virealm\\env-demo-01",
+    "policy": {
+      "isolation": "managed",
+      "allowedProgramRoots": ["C:\\Program Files\\Virealm"],
+      "fileAccess": { "kind": "inherited" },
+      "networkAccess": "allow",
+      "containment": {
+        "killOnClose": true,
+        "maxProcesses": 32,
+        "memoryLimitBytes": 1073741824
+      }
+    }
+  }
+}

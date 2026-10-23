@@ -1,0 +1,5 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_capabilities_001",
+  "method": "runtime.getCapabilities"
+}

@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.virealm.dev/protocol/response.schema.json",
+  "title": "Responses",
+  "description": "Runtime-to-caller responses. A success repeats the method so its result can be interpreted without guessing at the request.",
+  "$defs": {
+    "CapabilitiesResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "method", "ok", "result"],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProtocolVersion"
+        },
+        "requestId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/RequestId"
+        },
+        "method": { "const": "runtime.getCapabilities" },
+        "ok": { "const": true },
+        "result": {
+          "$ref": "../common/capabilities.schema.json#/$defs/CapabilityReport"
+        }
+      }
+    },
+    "LaunchResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "method", "ok", "result"],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProtocolVersion"
+        },
+        "requestId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/RequestId"
+        },
+        "method": { "const": "process.launch" },
+        "ok": { "const": true },
+        "result": {
+          "$ref": "../process/status.schema.json#/$defs/ProcessStatus"
+        }
+      }
+    },
+    "StatusResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "method", "ok", "result"],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProtocolVersion"
+        },
+        "requestId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/RequestId"
+        },
+        "method": { "const": "process.getStatus" },
+        "ok": { "const": true },
+        "result": {
+          "$ref": "../process/status.schema.json#/$defs/ProcessStatus"
+        }
+      }
+    },
+    "TerminateResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "method", "ok", "result"],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProtocolVersion"
+        },
+        "requestId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/RequestId"
+        },
+        "method": { "const": "process.terminate" },
+        "ok": { "const": true },
+        "result": {
+          "$ref": "../process/status.schema.json#/$defs/ProcessStatus"
+        }
+      }
+    },
+    "DiagnosticsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "method", "ok", "result"],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProtocolVersion"
+        },
+        "requestId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/RequestId"
+        },
+        "method": { "const": "process.getDiagnostics" },
+        "ok": { "const": true },
+        "result": {
+          "$ref": "../process/result.schema.json#/$defs/ProcessDiagnosticsResult"
+        }
+      }
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "ok", "error"],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProtocolVersion"
+        },
+        "requestId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/RequestId"
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[\\u0020-\\u007E]+$",
+          "description": "Echoed when the method was known. Absent for unsupported_protocol_version and malformed envelopes."
+        },
+        "ok": { "const": false },
+        "error": { "$ref": "../common/errors.schema.json#/$defs/ContractError" }
+      }
+    },
+    "Response": {
+      "oneOf": [
+        { "$ref": "#/$defs/CapabilitiesResponse" },
+        { "$ref": "#/$defs/LaunchResponse" },
+        { "$ref": "#/$defs/StatusResponse" },
+        { "$ref": "#/$defs/TerminateResponse" },
+        { "$ref": "#/$defs/DiagnosticsResponse" },
+        { "$ref": "#/$defs/ErrorResponse" }
+      ]
+    }
+  }
+}

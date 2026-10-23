@@ -1,0 +1,33 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Node
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Electron Builder output
+release/
+release-*/
+
+# Stray packaging artifacts: a run with a mangled temporary output path wrote
+# the archive into the app directory under a flattened absolute path.
+apps/desktop/Users*/
+
+# Environment and local runtime data
+.env
+.env.*
+.virealm/
+
+# Editors and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

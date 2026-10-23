@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.virealm.dev/protocol/request.schema.json",
+  "title": "Requests",
+  "description": "Caller-to-runtime requests. The method and its parameters are validated together.",
+  "$defs": {
+    "RuntimeGetCapabilitiesRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "method"],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProtocolVersion"
+        },
+        "requestId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/RequestId"
+        },
+        "method": { "const": "runtime.getCapabilities" }
+      }
+    },
+    "ProcessLaunchRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "method", "params"],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProtocolVersion"
+        },
+        "requestId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/RequestId"
+        },
+        "method": { "const": "process.launch" },
+        "params": {
+          "$ref": "../process/launch.schema.json#/$defs/LaunchParams"
+        }
+      }
+    },
+    "ProcessGetStatusRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "method", "params"],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProtocolVersion"
+        },
+        "requestId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/RequestId"
+        },
+        "method": { "const": "process.getStatus" },
+        "params": {
+          "$ref": "../process/status.schema.json#/$defs/ProcessReference"
+        }
+      }
+    },
+    "ProcessTerminateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "method", "params"],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProtocolVersion"
+        },
+        "requestId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/RequestId"
+        },
+        "method": { "const": "process.terminate" },
+        "params": {
+          "$ref": "../process/status.schema.json#/$defs/ProcessReference"
+        }
+      }
+    },
+    "ProcessGetDiagnosticsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "method", "params"],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProtocolVersion"
+        },
+        "requestId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/RequestId"
+        },
+        "method": { "const": "process.getDiagnostics" },
+        "params": {
+          "$ref": "../process/status.schema.json#/$defs/ProcessReference"
+        }
+      }
+    },
+    "Request": {
+      "oneOf": [
+        { "$ref": "#/$defs/RuntimeGetCapabilitiesRequest" },
+        { "$ref": "#/$defs/ProcessLaunchRequest" },
+        { "$ref": "#/$defs/ProcessGetStatusRequest" },
+        { "$ref": "#/$defs/ProcessTerminateRequest" },
+        { "$ref": "#/$defs/ProcessGetDiagnosticsRequest" }
+      ]
+    }
+  }
+}

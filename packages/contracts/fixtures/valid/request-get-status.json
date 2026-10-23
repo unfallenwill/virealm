@@ -1,0 +1,8 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_status_001",
+  "method": "process.getStatus",
+  "params": {
+    "processInstanceId": "4242:134129088000000000"
+  }
+}

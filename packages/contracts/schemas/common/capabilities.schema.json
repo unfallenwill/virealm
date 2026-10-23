@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.virealm.dev/common/capabilities.schema.json",
+  "title": "Capabilities",
+  "description": "Result of exercising containment primitives on the host. A version number is never treated as evidence of support.",
+  "$defs": {
+    "CapabilityState": {
+      "type": "string",
+      "enum": ["supported", "unsupported", "unavailable", "not_verified"],
+      "description": "supported: exercised successfully. unsupported: the platform lacks it. unavailable: present but blocked in this session. not_verified: not exercised by this build."
+    },
+    "Capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/CapabilityState"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    },
+    "WindowsVersion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["major", "minor", "build"],
+      "properties": {
+        "major": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "minor": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "build": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+      }
+    },
+    "IntegrityLevel": {
+      "type": "string",
+      "enum": [
+        "untrusted",
+        "low",
+        "medium",
+        "high",
+        "system",
+        "protected",
+        "unknown"
+      ]
+    },
+    "PlatformInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "version",
+        "architecture",
+        "elevated",
+        "integrityLevel"
+      ],
+      "properties": {
+        "os": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "version": {
+          "$ref": "#/$defs/WindowsVersion"
+        },
+        "architecture": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "elevated": {
+          "type": "boolean",
+          "description": "Whether the calling process token is elevated."
+        },
+        "integrityLevel": {
+          "$ref": "#/$defs/IntegrityLevel"
+        }
+      }
+    },
+    "CapabilityReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platform",
+        "jobObject",
+        "appContainer",
+        "appContainerAcl",
+        "restrictedToken",
+        "processMitigation",
+        "etw"
+      ],
+      "properties": {
+        "platform": { "$ref": "#/$defs/PlatformInfo" },
+        "jobObject": { "$ref": "#/$defs/Capability" },
+        "appContainer": { "$ref": "#/$defs/Capability" },
+        "appContainerAcl": { "$ref": "#/$defs/Capability" },
+        "restrictedToken": { "$ref": "#/$defs/Capability" },
+        "processMitigation": { "$ref": "#/$defs/Capability" },
+        "etw": { "$ref": "#/$defs/Capability" },
+        "notes": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        }
+      }
+    }
+  }
+}

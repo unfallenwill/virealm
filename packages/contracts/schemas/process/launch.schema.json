@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.virealm.dev/process/launch.schema.json",
+  "title": "Launch",
+  "description": "A request to launch one managed process. Every value here maps to LaunchSpec or SecurityPolicy in virealm-process-runtime.",
+  "$defs": {
+    "FilePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32767,
+      "pattern": "^(?:[A-Za-z]:[\\\\/]|\\\\\\\\).*$",
+      "description": "Absolute Windows path (drive-qualified or UNC). Relative paths are rejected before any process is created."
+    },
+    "CommandLineArgument": {
+      "type": "string",
+      "maxLength": 32767,
+      "pattern": "^[^\\u0000]*$",
+      "description": "One argument. Arguments are never concatenated by the caller."
+    },
+    "EnvironmentVariableName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32767,
+      "pattern": "^[^=\\u0000]+$"
+    },
+    "EnvironmentVariableValue": {
+      "type": "string",
+      "maxLength": 32767,
+      "pattern": "^[^\\u0000]*$"
+    },
+    "EnvironmentOverrides": {
+      "type": "object",
+      "maxProperties": 256,
+      "propertyNames": { "$ref": "#/$defs/EnvironmentVariableName" },
+      "additionalProperties": { "$ref": "#/$defs/EnvironmentVariableValue" },
+      "description": "Explicit overrides applied on top of the inherited environment. Names must be unique case-insensitively; the runtime rejects such duplicates."
+    },
+    "AccessLevel": {
+      "type": "string",
+      "enum": ["read_only", "read_write"]
+    },
+    "AccessRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "access"],
+      "properties": {
+        "path": { "$ref": "#/$defs/FilePath" },
+        "access": { "$ref": "#/$defs/AccessLevel" }
+      }
+    },
+    "InheritedFileAccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "const": "inherited" }
+      }
+    },
+    "RestrictedFileAccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "dataDirectory", "additionalRoots"],
+      "properties": {
+        "kind": { "const": "restricted" },
+        "dataDirectory": { "$ref": "#/$defs/AccessLevel" },
+        "additionalRoots": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/AccessRoot" }
+        }
+      }
+    },
+    "ContainmentLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["killOnClose"],
+      "properties": {
+        "killOnClose": {
+          "const": true,
+          "description": "Must be true. The runtime rejects a managed process that would outlive its job handle."
+        },
+        "maxProcesses": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "memoryLimitBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "LaunchPolicyManaged": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "isolation",
+        "allowedProgramRoots",
+        "fileAccess",
+        "networkAccess",
+        "containment"
+      ],
+      "properties": {
+        "isolation": { "const": "managed" },
+        "allowedProgramRoots": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/FilePath" }
+        },
+        "fileAccess": { "$ref": "#/$defs/InheritedFileAccess" },
+        "networkAccess": { "const": "allow" },
+        "containment": { "$ref": "#/$defs/ContainmentLimits" }
+      }
+    },
+    "LaunchPolicyRestricted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "isolation",
+        "allowedProgramRoots",
+        "fileAccess",
+        "networkAccess",
+        "containment"
+      ],
+      "properties": {
+        "isolation": { "const": "restricted" },
+        "allowedProgramRoots": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/FilePath" }
+        },
+        "fileAccess": { "$ref": "#/$defs/InheritedFileAccess" },
+        "networkAccess": { "const": "allow" },
+        "containment": { "$ref": "#/$defs/ContainmentLimits" }
+      }
+    },
+    "LaunchPolicyAppContainer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "isolation",
+        "allowedProgramRoots",
+        "fileAccess",
+        "networkAccess",
+        "containment"
+      ],
+      "properties": {
+        "isolation": { "const": "app_container" },
+        "allowedProgramRoots": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/FilePath" }
+        },
+        "fileAccess": { "$ref": "#/$defs/RestrictedFileAccess" },
+        "networkAccess": {
+          "$ref": "isolation.schema.json#/$defs/NetworkAccess"
+        },
+        "containment": { "$ref": "#/$defs/ContainmentLimits" }
+      }
+    },
+    "LaunchPolicy": {
+      "oneOf": [
+        { "$ref": "#/$defs/LaunchPolicyManaged" },
+        { "$ref": "#/$defs/LaunchPolicyRestricted" },
+        { "$ref": "#/$defs/LaunchPolicyAppContainer" }
+      ],
+      "description": "Mode and policy are validated together so a request can never claim containment the runtime cannot enforce."
+    },
+    "LaunchParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environmentId",
+        "executable",
+        "arguments",
+        "dataDirectory",
+        "policy"
+      ],
+      "properties": {
+        "environmentId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/EnvironmentId"
+        },
+        "executable": { "$ref": "#/$defs/FilePath" },
+        "arguments": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": { "$ref": "#/$defs/CommandLineArgument" }
+        },
+        "workingDirectory": { "$ref": "#/$defs/FilePath" },
+        "environmentOverrides": { "$ref": "#/$defs/EnvironmentOverrides" },
+        "dataDirectory": { "$ref": "#/$defs/FilePath" },
+        "policy": { "$ref": "#/$defs/LaunchPolicy" }
+      }
+    }
+  }
+}

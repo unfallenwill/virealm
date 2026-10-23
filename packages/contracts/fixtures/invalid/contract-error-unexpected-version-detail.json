@@ -1,0 +1,6 @@
+{
+  "code": "invalid_request",
+  "message": "the request is malformed",
+  "retryable": true,
+  "details": { "supportedProtocolVersion": 2 }
+}

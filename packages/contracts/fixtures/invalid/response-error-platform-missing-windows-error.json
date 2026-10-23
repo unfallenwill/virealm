@@ -1,0 +1,12 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_platform_shape_002",
+  "method": "process.launch",
+  "ok": false,
+  "error": {
+    "code": "platform_failure",
+    "message": "a Windows call failed",
+    "retryable": false,
+    "details": { "operation": "CreateProcessW" }
+  }
+}

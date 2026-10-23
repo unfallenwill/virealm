@@ -1,0 +1,15 @@
+{
+  "platform": {
+    "os": "windows",
+    "version": { "major": 10, "minor": 0, "build": 26100 },
+    "architecture": "x86_64",
+    "elevated": false,
+    "integrityLevel": "medium"
+  },
+  "jobObject": { "state": "maybe" },
+  "appContainer": { "state": "supported" },
+  "appContainerAcl": { "state": "supported" },
+  "restrictedToken": { "state": "supported" },
+  "processMitigation": { "state": "not_verified" },
+  "etw": { "state": "not_verified" }
+}

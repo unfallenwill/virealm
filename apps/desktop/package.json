@@ -1,0 +1,71 @@
+{
+  "name": "@virealm/desktop",
+  "productName": "Virealm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Virealm desktop application: manage isolated Chrome environments.",
+  "type": "module",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "start": "electron .",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css,html}\" \"tests/**/*.ts\" \"scripts/*.mjs\" \"*.{js,json,ts}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css,html}\" \"tests/**/*.ts\" \"scripts/*.mjs\" \"*.{js,json,ts}\"",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:electron": "vitest run --config vitest.integration.config.ts --dir tests/electron",
+    "package": "electron-builder"
+  },
+  "dependencies": {
+    "@virealm/browser-adapter": "workspace:*",
+    "@virealm/contracts": "workspace:*",
+    "@virealm/runtime-client": "workspace:*",
+    "playwright-core": "^1.64.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "@vitest/coverage-v8": "^5.0.5",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^10.13.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^7.1.0",
+    "vitest": "^5.0.5"
+  },
+  "build": {
+    "appId": "com.virealm.desktop",
+    "productName": "Virealm",
+    "afterPack": "scripts/after-pack.mjs",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../target/release/virealm-runtime.exe",
+        "to": "runtime/virealm-runtime.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        "dir"
+      ]
+    }
+  }
+}

@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  contracts:
+    name: Contracts (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm contracts:check-generated
+      - run: pnpm contracts:lint
+      - run: pnpm contracts:format:check
+      - run: pnpm contracts:typecheck
+      - run: pnpm contracts:test
+      - run: pnpm contracts:build
+
+  runtime:
+    name: Process Runtime (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  browser-adapter:
+    name: Browser Adapter (Windows, real Chrome)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: cargo build -p virealm-process-runtime --bin virealm-runtime
+      - name: Verify Chrome is installed
+        run: |
+          $chrome = "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"
+          $versioned = Get-ChildItem "$env:ProgramFiles\Google\Chrome\Application" -Directory |
+            Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' }
+          if (-not (Test-Path $chrome) -and -not $versioned) {
+            throw "Chrome is required for the real-browser integration gate"
+          }
+      - run: pnpm adapter:lint
+      - run: pnpm adapter:format:check
+      - run: pnpm adapter:typecheck
+      - run: pnpm adapter:test
+      - run: pnpm adapter:build
+      - run: pnpm adapter:test:integration
+
+  desktop:
+    name: Desktop (Windows, Electron + real Chrome)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: cargo build -p virealm-process-runtime --bin virealm-runtime
+      - name: Verify Chrome is installed
+        run: |
+          $chrome = "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"
+          $versioned = Get-ChildItem "$env:ProgramFiles\Google\Chrome\Application" -Directory |
+            Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' }
+          if (-not (Test-Path $chrome) -and -not $versioned) {
+            throw "Chrome is required for the desktop integration gate"
+          }
+      - run: pnpm desktop:lint
+      - run: pnpm desktop:format:check
+      - run: pnpm desktop:typecheck
+      - run: pnpm desktop:test
+      - run: pnpm desktop:build
+      - run: pnpm desktop:test:integration

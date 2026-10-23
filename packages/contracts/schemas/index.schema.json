@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.virealm.dev/index.schema.json",
+  "title": "VirealmProcessProtocol",
+  "description": "Every public message of the Virealm process protocol. Generated TypeScript is compiled from this document after its file references are bundled.",
+  "oneOf": [
+    { "$ref": "protocol/request.schema.json#/$defs/Request" },
+    { "$ref": "protocol/response.schema.json#/$defs/Response" },
+    { "$ref": "protocol/event.schema.json#/$defs/Event" },
+    { "$ref": "common/capabilities.schema.json#/$defs/CapabilityReport" },
+    { "$ref": "process/status.schema.json#/$defs/ProcessStatus" },
+    { "$ref": "common/errors.schema.json#/$defs/ContractError" }
+  ],
+  "x-include": ["protocol/methods.schema.json#/$defs/MethodName"]
+}

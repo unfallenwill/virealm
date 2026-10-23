@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.virealm.dev/process/status.schema.json",
+  "title": "Process status",
+  "description": "Durable identity and current state of one managed process. A bare PID is never used as identity.",
+  "$defs": {
+    "ProcessState": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "properties": {
+            "state": { "const": "starting" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "pid"],
+          "properties": {
+            "state": { "const": "running" },
+            "pid": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "exitCode"],
+          "properties": {
+            "state": { "const": "exited" },
+            "exitCode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            }
+          }
+        }
+      ],
+      "description": "Tagged state. The exit code exists only while the state is exited, so a missing value cannot be mistaken for success."
+    },
+    "ProcessStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processInstanceId",
+        "pid",
+        "creationTime100ns",
+        "startedAtUnixMs",
+        "state",
+        "applied"
+      ],
+      "properties": {
+        "processInstanceId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProcessInstanceId"
+        },
+        "pid": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "creationTime100ns": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]{0,19})$",
+          "description": "Decimal encoding of the Windows FILETIME creation time (100-nanosecond intervals since 1601-01-01 UTC). A JSON number is unsafe here: real values exceed JavaScript's integer precision. Adapt from the runtime's u64 with its exact decimal digits."
+        },
+        "startedAtUnixMs": {
+          "type": "integer",
+          "minimum": -11644473600000,
+          "maximum": 9007199254740991,
+          "description": "Unix epoch milliseconds derived exactly from creationTime100ns: floor(creationTime100ns / 10000) - 11644473600000."
+        },
+        "state": { "$ref": "#/$defs/ProcessState" },
+        "applied": { "$ref": "isolation.schema.json#/$defs/AppliedIsolation" },
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "../common/diagnostics.schema.json#/$defs/DiagnosticEvent"
+          },
+          "description": "Diagnostics the runtime currently holds for this instance. Optional because a transport may deliver them separately."
+        }
+      }
+    },
+    "ProcessReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["processInstanceId"],
+      "properties": {
+        "processInstanceId": {
+          "$ref": "../common/identifiers.schema.json#/$defs/ProcessInstanceId"
+        }
+      }
+    }
+  }
+}

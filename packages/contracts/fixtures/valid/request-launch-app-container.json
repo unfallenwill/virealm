@@ -1,0 +1,28 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_launch_container_001",
+  "method": "process.launch",
+  "params": {
+    "environmentId": "env-demo-02",
+    "executable": "C:\\Program Files\\Virealm\\virealm-child.exe",
+    "arguments": [],
+    "environmentOverrides": {},
+    "dataDirectory": "C:\\Users\\demo\\AppData\\Local\\Virealm\\env-demo-02",
+    "policy": {
+      "isolation": "app_container",
+      "allowedProgramRoots": ["C:\\Program Files\\Virealm"],
+      "fileAccess": {
+        "kind": "restricted",
+        "dataDirectory": "read_write",
+        "additionalRoots": [
+          {
+            "path": "C:\\Program Files\\Virealm\\shared",
+            "access": "read_only"
+          }
+        ]
+      },
+      "networkAccess": "deny",
+      "containment": { "killOnClose": true }
+    }
+  }
+}

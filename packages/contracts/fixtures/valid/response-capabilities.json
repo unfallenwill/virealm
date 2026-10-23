@@ -1,0 +1,39 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_capabilities_001",
+  "method": "runtime.getCapabilities",
+  "ok": true,
+  "result": {
+    "platform": {
+      "os": "windows",
+      "version": { "major": 10, "minor": 0, "build": 26100 },
+      "architecture": "x86_64",
+      "elevated": false,
+      "integrityLevel": "medium"
+    },
+    "jobObject": {
+      "state": "supported",
+      "detail": "assigned and queried a job object"
+    },
+    "appContainer": {
+      "state": "supported",
+      "detail": "created a transient AppContainer profile"
+    },
+    "appContainerAcl": {
+      "state": "supported",
+      "detail": "granted and verified directory access"
+    },
+    "restrictedToken": {
+      "state": "supported",
+      "detail": "created a low-integrity restricted token"
+    },
+    "processMitigation": {
+      "state": "not_verified",
+      "detail": "not exercised by this build"
+    },
+    "etw": {
+      "state": "not_verified",
+      "detail": "no ETW consumer is implemented"
+    }
+  }
+}

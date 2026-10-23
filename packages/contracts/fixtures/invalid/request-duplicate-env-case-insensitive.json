@@ -1,0 +1,22 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_duplicate_env_001",
+  "method": "process.launch",
+  "params": {
+    "environmentId": "env-demo-01",
+    "executable": "C:\\Program Files\\Virealm\\virealm-child.exe",
+    "arguments": [],
+    "environmentOverrides": {
+      "PATH": "C:\\Windows",
+      "Path": "C:\\Other"
+    },
+    "dataDirectory": "C:\\Users\\demo\\AppData\\Local\\Virealm\\env-demo-01",
+    "policy": {
+      "isolation": "managed",
+      "allowedProgramRoots": ["C:\\Program Files\\Virealm"],
+      "fileAccess": { "kind": "inherited" },
+      "networkAccess": "allow",
+      "containment": { "killOnClose": true }
+    }
+  }
+}

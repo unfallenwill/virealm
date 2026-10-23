@@ -1,0 +1,229 @@
+{
+  "description": "Stable fixtures for the Virealm process protocol. Every entry is executed by the contract tests and is intended for reuse by Rust contract tests.",
+  "valid": [
+    { "file": "valid/request-get-capabilities.json", "kind": "request" },
+    { "file": "valid/request-launch-managed.json", "kind": "request" },
+    { "file": "valid/request-launch-app-container.json", "kind": "request" },
+    { "file": "valid/request-get-status.json", "kind": "request" },
+    { "file": "valid/request-terminate.json", "kind": "request" },
+    { "file": "valid/request-get-diagnostics.json", "kind": "request" },
+    { "file": "valid/response-capabilities.json", "kind": "response" },
+    { "file": "valid/response-launch.json", "kind": "response" },
+    { "file": "valid/response-status-running.json", "kind": "response" },
+    { "file": "valid/response-status-exited.json", "kind": "response" },
+    { "file": "valid/response-terminate.json", "kind": "response" },
+    { "file": "valid/response-diagnostics.json", "kind": "response" },
+    {
+      "file": "valid/response-error-platform-failure.json",
+      "kind": "response"
+    },
+    { "file": "valid/response-error-unknown-method.json", "kind": "response" },
+    { "file": "valid/capability-report.json", "kind": "capability" },
+    { "file": "valid/process-status-running.json", "kind": "status" },
+    { "file": "valid/process-status-exited.json", "kind": "status" },
+    {
+      "file": "valid/contract-error-unsupported-version.json",
+      "kind": "error"
+    },
+    { "file": "valid/contract-error-process-not-found.json", "kind": "error" },
+    { "file": "valid/event-process-exited.json", "kind": "event" }
+  ],
+  "invalid": [
+    {
+      "file": "invalid/request-missing-request-id.json",
+      "kind": "request",
+      "expect": {
+        "path": "/",
+        "keyword": "required",
+        "missingProperty": "requestId"
+      }
+    },
+    {
+      "file": "invalid/request-wrong-type.json",
+      "kind": "request",
+      "expect": { "path": "/protocolVersion", "keyword": "type" }
+    },
+    {
+      "file": "invalid/request-unknown-method.json",
+      "kind": "request",
+      "expect": { "path": "/", "keyword": "oneOf" }
+    },
+    {
+      "file": "invalid/request-invalid-version.json",
+      "kind": "request",
+      "expect": { "path": "/protocolVersion", "keyword": "const" }
+    },
+    {
+      "file": "invalid/request-illegal-isolation.json",
+      "kind": "request",
+      "expect": { "path": "/params/policy/isolation", "keyword": "const" }
+    },
+    {
+      "file": "invalid/request-boundary-max-processes-zero.json",
+      "kind": "request",
+      "expect": {
+        "path": "/params/policy/containment/maxProcesses",
+        "keyword": "minimum"
+      }
+    },
+    {
+      "file": "invalid/request-relative-executable.json",
+      "kind": "request",
+      "expect": { "path": "/params/executable", "keyword": "pattern" }
+    },
+    {
+      "file": "invalid/request-app-container-inherited-file-access.json",
+      "kind": "request",
+      "expect": { "path": "/params/policy/fileAccess/kind", "keyword": "const" }
+    },
+    {
+      "file": "invalid/request-managed-restricted-file-access.json",
+      "kind": "request",
+      "expect": { "path": "/params/policy/fileAccess/kind", "keyword": "const" }
+    },
+    {
+      "file": "invalid/request-duplicate-env-case-insensitive.json",
+      "kind": "request",
+      "expect": {
+        "path": "/params/environmentOverrides",
+        "keyword": "contractSemantics"
+      }
+    },
+    {
+      "file": "invalid/request-missing-params.json",
+      "kind": "request",
+      "expect": {
+        "path": "/",
+        "keyword": "required",
+        "missingProperty": "params"
+      }
+    },
+    {
+      "file": "invalid/request-empty-allowed-roots.json",
+      "kind": "request",
+      "expect": {
+        "path": "/params/policy/allowedProgramRoots",
+        "keyword": "minItems"
+      }
+    },
+    {
+      "file": "invalid/request-illegal-access-level.json",
+      "kind": "request",
+      "expect": {
+        "path": "/params/policy/fileAccess/dataDirectory",
+        "keyword": "enum"
+      }
+    },
+    {
+      "file": "invalid/request-request-id-pattern.json",
+      "kind": "request",
+      "expect": { "path": "/requestId", "keyword": "pattern" }
+    },
+    {
+      "file": "invalid/request-process-instance-leading-zero.json",
+      "kind": "request",
+      "expect": { "path": "/params/processInstanceId", "keyword": "pattern" }
+    },
+    {
+      "file": "invalid/response-invalid-status.json",
+      "kind": "response",
+      "expect": { "path": "/processInstanceId", "keyword": "contractSemantics" }
+    },
+    {
+      "file": "invalid/response-error-missing-retryable.json",
+      "kind": "response",
+      "expect": {
+        "path": "/error",
+        "keyword": "required",
+        "missingProperty": "retryable"
+      }
+    },
+    {
+      "file": "invalid/response-error-unknown-field.json",
+      "kind": "response",
+      "expect": {
+        "path": "/error",
+        "keyword": "additionalProperties",
+        "additionalProperty": "stack"
+      }
+    },
+    {
+      "file": "invalid/response-error-platform-missing-operation.json",
+      "kind": "response",
+      "expect": { "path": "/details/operation", "keyword": "contractSemantics" }
+    },
+    {
+      "file": "invalid/contract-error-unsupported-version-missing-detail.json",
+      "kind": "error",
+      "expect": {
+        "path": "/details/supportedProtocolVersion",
+        "keyword": "contractSemantics"
+      }
+    },
+    {
+      "file": "invalid/contract-error-unknown-method-missing-detail.json",
+      "kind": "error",
+      "expect": { "path": "/details/method", "keyword": "contractSemantics" }
+    },
+    {
+      "file": "invalid/contract-error-retryable-wrong.json",
+      "kind": "error",
+      "expect": { "path": "/retryable", "keyword": "contractSemantics" }
+    },
+    {
+      "file": "invalid/contract-error-unexpected-method-detail.json",
+      "kind": "error",
+      "expect": { "path": "/details/method", "keyword": "contractSemantics" }
+    },
+    {
+      "file": "invalid/contract-error-unexpected-version-detail.json",
+      "kind": "error",
+      "expect": {
+        "path": "/details/supportedProtocolVersion",
+        "keyword": "contractSemantics"
+      }
+    },
+    {
+      "file": "invalid/contract-error-unexpected-platform-detail.json",
+      "kind": "error",
+      "expect": { "path": "/details", "keyword": "contractSemantics" }
+    },
+    {
+      "file": "invalid/response-error-platform-missing-windows-error.json",
+      "kind": "response",
+      "expect": {
+        "path": "/details/windowsError",
+        "keyword": "contractSemantics"
+      }
+    },
+    {
+      "file": "invalid/process-status-invalid-started-at.json",
+      "kind": "status",
+      "expect": { "path": "/startedAtUnixMs", "keyword": "contractSemantics" }
+    },
+    {
+      "file": "invalid/process-status-creation-out-of-u64.json",
+      "kind": "status",
+      "expect": { "path": "/creationTime100ns", "keyword": "contractSemantics" }
+    },
+    {
+      "file": "invalid/event-invalid-name.json",
+      "kind": "event",
+      "expect": { "path": "/event", "keyword": "const" }
+    },
+    {
+      "file": "invalid/event-missing-event-id.json",
+      "kind": "event",
+      "expect": {
+        "path": "/",
+        "keyword": "required",
+        "missingProperty": "eventId"
+      }
+    },
+    {
+      "file": "invalid/capability-invalid-state.json",
+      "kind": "capability",
+      "expect": { "path": "/jobObject/state", "keyword": "enum" }
+    }
+  ]
+}

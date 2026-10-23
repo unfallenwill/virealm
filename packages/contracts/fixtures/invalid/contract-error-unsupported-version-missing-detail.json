@@ -1,0 +1,6 @@
+{
+  "code": "unsupported_protocol_version",
+  "message": "unsupported protocol version",
+  "retryable": true,
+  "details": {}
+}

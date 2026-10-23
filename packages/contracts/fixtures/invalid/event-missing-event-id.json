@@ -1,0 +1,7 @@
+{
+  "protocolVersion": 2,
+  "event": "process.exited",
+  "occurredAtUnixMs": 1768435260000,
+  "processInstanceId": "4242:134129088000000000",
+  "exitCode": 0
+}

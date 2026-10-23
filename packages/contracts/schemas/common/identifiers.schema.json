@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.virealm.dev/common/identifiers.schema.json",
+  "title": "Identifiers",
+  "description": "Shared identifier formats used by every Virealm protocol message.",
+  "$defs": {
+    "ProtocolVersion": {
+      "type": "integer",
+      "const": 2,
+      "description": "Wire protocol version. Mirrors PROTOCOL_VERSION in virealm-process-runtime."
+    },
+    "EnvironmentId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]*\\S[^\\u0000-\\u001F\\u007F]*$",
+      "description": "Opaque environment identifier. Non-empty, at most 128 characters, no control characters."
+    },
+    "RequestId": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 68,
+      "pattern": "^req_[A-Za-z0-9_-]{1,64}$",
+      "description": "Correlates a response with the request that produced it."
+    },
+    "EventId": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 68,
+      "pattern": "^evt_[A-Za-z0-9_-]{1,64}$",
+      "description": "Identifies one event notification."
+    },
+    "ProcessInstanceId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 31,
+      "pattern": "^(?:0|[1-9][0-9]{0,9}):(?:0|[1-9][0-9]{0,19})$",
+      "description": "Durable process identity formatted as '<pid>:<creationTime100ns>'. A bare PID is never an identity because Windows reuses PIDs."
+    }
+  }
+}

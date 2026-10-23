@@ -1,0 +1,12 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_unknown_001",
+  "method": "process.kill",
+  "ok": false,
+  "error": {
+    "code": "unknown_method",
+    "message": "unknown method \"process.kill\"",
+    "retryable": true,
+    "details": { "method": "process.kill" }
+  }
+}

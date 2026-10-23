@@ -1,0 +1,8 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_diagnostics_001",
+  "method": "process.getDiagnostics",
+  "params": {
+    "processInstanceId": "4243:134129100000000000"
+  }
+}

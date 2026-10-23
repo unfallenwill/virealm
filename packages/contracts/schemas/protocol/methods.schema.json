@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.virealm.dev/protocol/methods.schema.json",
+  "title": "Methods",
+  "description": "Request methods exposed by the process runtime. Only implemented operations are listed.",
+  "$defs": {
+    "MethodName": {
+      "type": "string",
+      "enum": [
+        "runtime.getCapabilities",
+        "process.launch",
+        "process.getStatus",
+        "process.terminate",
+        "process.getDiagnostics"
+      ],
+      "description": "Every method maps to a public function of the Rust runtime: probe_capabilities, launch, ManagedProcess::status, ManagedProcess::terminate, and ManagedProcess::diagnostics."
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.virealm.dev/process/isolation.schema.json",
+  "title": "Isolation",
+  "description": "Isolation modes and the evidence that a mode was actually applied.",
+  "$defs": {
+    "IsolationMode": {
+      "type": "string",
+      "enum": ["managed", "restricted", "app_container"],
+      "description": "managed is Job Object lifecycle containment only, not a sandbox. restricted adds a low-integrity restricted token. app_container adds an AppContainer profile with explicit file capabilities."
+    },
+    "NetworkAccess": {
+      "type": "string",
+      "enum": ["allow", "deny"]
+    },
+    "AppliedIsolation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "jobObjectAttached",
+        "appContainerToken",
+        "restrictedToken",
+        "lowIntegrity",
+        "fileAccessRestricted",
+        "networkAccess",
+        "networkCapabilitiesVerified"
+      ],
+      "description": "Observed evidence from the created process and its job, not a copy of the requested policy.",
+      "properties": {
+        "mode": { "$ref": "#/$defs/IsolationMode" },
+        "jobObjectAttached": {
+          "type": "boolean",
+          "description": "The process was assigned to a Job Object."
+        },
+        "appContainerToken": {
+          "type": "boolean",
+          "description": "The child token is an AppContainer token."
+        },
+        "restrictedToken": {
+          "type": "boolean",
+          "description": "The child token is a restricted token."
+        },
+        "lowIntegrity": {
+          "type": "boolean",
+          "description": "The child token runs at low integrity."
+        },
+        "fileAccessRestricted": {
+          "type": "boolean",
+          "description": "Path-level file access is enforced by AppContainer capabilities."
+        },
+        "networkAccess": { "$ref": "#/$defs/NetworkAccess" },
+        "networkCapabilitiesVerified": {
+          "type": "boolean",
+          "description": "The child token's capability SIDs matched the network policy."
+        }
+      }
+    }
+  }
+}
