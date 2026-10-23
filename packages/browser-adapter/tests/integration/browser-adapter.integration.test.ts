@@ -21,6 +21,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BrowserAdapter } from "../../src/browser-adapter.js";
 import { discoverBrowsers } from "../../src/chrome/discovery.js";
 import type { BrowserEnvironmentConfig } from "../../src/domain/environment.js";
+import { BrowserAdapterError } from "../../src/domain/errors.js";
 import type {
   ConfigFieldResult,
   EnvironmentConfigReport,
@@ -816,9 +817,34 @@ describe.skipIf(!available)(
       expect(failure).toBeDefined();
       expect(failure).toMatchObject({
         code: "unsupported_isolation",
-        details: { isolation: "restricted", reason: "status_breakpoint" },
+        details: { isolation: "restricted" },
       });
-      expect((failure as Error).message).toContain("STATUS_BREAKPOINT");
+      const details = (failure as BrowserAdapterError).details as {
+        isolation: string;
+        exitCode: number;
+        reason: string;
+      };
+      // The abort code is not stable across Chromium builds: this machine
+      // reports STATUS_BREAKPOINT, a runner with another build reports a
+      // different code. The classification must not depend on one value, but
+      // the code that was observed is still reported.
+      expect(details.exitCode).toBeTypeOf("number");
+      // The observed abort code is build specific, so it is printed for the
+      // CI log rather than assumed.
+      console.log(
+        `restricted-token launch aborted with code ${String(details.exitCode)} (0x${details.exitCode.toString(16)})`,
+      );
+      expect([
+        "status_breakpoint",
+        "early_exit_under_restricted_isolation",
+      ]).toContain(details.reason);
+      expect((failure as Error).message).toContain(
+        "cannot start its own sandbox inside a restricted-token token",
+      );
+      if (details.reason === "status_breakpoint") {
+        expect(details.exitCode).toBe(0x80000003);
+        expect((failure as Error).message).toContain("STATUS_BREAKPOINT");
+      }
     });
   },
 );

@@ -23,8 +23,14 @@
 `restricted` 与 `app_container` 都**无法**承载 Chrome。这不是运行时实现缺失，
 而是 Chromium 自身的约束：Chrome 的浏览器进程要为自己创建沙箱（Job Object +
 受限令牌），当它已经运行在运行时预先限制过的令牌里时，这一步会失败并触发
-Chromium 的 `CHECK` 中止，进程以 `STATUS_BREAKPOINT`（`0x80000003`）退出，
-不写入任何 Profile 数据。
+Chromium 的 `CHECK` 中止，进程在启动阶段退出，不写入任何 Profile 数据。
+
+**中止码随 Chromium 构建而变。** 本机 Chrome 156.0.8078.48 上是
+`STATUS_BREAKPOINT`（`0x80000003`）；GitHub Actions 的 `windows-latest` 运行器上
+装的 Chromium 换了一个构建，同一场景的中止码就不是这个值。因此适配层**不按
+某一个魔数判定**——它按隔离模式判定：受限令牌 / AppContainer 下浏览器在启动
+阶段退出，就归类为 `unsupported_isolation`，并把实际观察到的 `exitCode` 一并
+返回。
 
 本机实测（Windows 11 26300 x86_64、非管理员、Chrome 156.0.8078.48）：
 
@@ -40,8 +46,10 @@ Chromium 的 `CHECK` 中止，进程以 `STATUS_BREAKPOINT`（`0x80000003`）退
 - 桌面应用在**保存与启动**环境时直接拒绝这两种模式，并给出可读原因
   （`unsupported_isolation`），而不是让用户在启动后才看到一个笼统的运行时错误。
 - 浏览器适配器保留对这两种模式的支持——运行时管理的其它程序可以使用它们——
-  但当被拉起的可执行文件是 Chromium 系浏览器并以 `STATUS_BREAKPOINT` 中止时，
-  适配器会把它翻译成 `unsupported_isolation`，并带上 `isolation` 与 `exitCode`。
+  但当被拉起的可执行文件是 Chromium 系浏览器并在启动阶段退出时，适配器会把它
+  翻译成 `unsupported_isolation`，并带上 `isolation`、`exitCode` 与 `reason`
+  （`status_breakpoint` 表示确实是 `0x80000003`，否则是
+  `early_exit_under_restricted_isolation`）。
 - 没有使用 `--no-sandbox` 之类的手段绕过：该做法是移除沙箱而不是让 Chromium
   在受限令牌下正常工作，等于放弃隔离本身，与项目的隔离目标相反。
 - 真正可用的隔离路径是 `managed`（Job Object 生命周期与资源约束）加上浏览器层

@@ -1147,7 +1147,7 @@ export class EnvironmentService {
   private async checkAlive(
     processInstanceId: string,
     isolation: IsolationPreference,
-  ): Promise<{ alive: boolean; detail?: string }> {
+  ): Promise<{ alive: boolean; detail?: string; exitCode?: number }> {
     const status = await this.tryStatus(processInstanceId);
     if (status === undefined) {
       return {
@@ -1156,32 +1156,52 @@ export class EnvironmentService {
       };
     }
     if (status.state.state === "exited") {
-      this.assertBrowserDidNotAbort(status.state.exitCode, isolation);
+      const exitCode = status.state.exitCode;
+      this.assertBrowserCanRunUnderIsolation(exitCode, isolation);
       return {
         alive: false,
-        detail: `Chrome exited during launch with code ${String(status.state.exitCode)}`,
+        detail: `Chrome exited during launch with code ${String(exitCode)}`,
+        exitCode,
       };
     }
     return { alive: true, detail: status.state.state };
   }
 
   /**
-   * Chromium's browser process aborts with `STATUS_BREAKPOINT` when it
-   * cannot start its own sandbox inside an already restricted token. The
-   * runtime applied the requested isolation correctly; the browser refuses to
-   * run inside it, so the request must not be reported as a generic failure.
+   * Chromium's browser process cannot start inside a token the runtime has
+   * already restricted: it aborts while initialising its own sandbox, before
+   * it ever publishes a debugging endpoint.
+   *
+   * The classification therefore keys on the isolation mode, not on one magic
+   * exit code. The observed abort code is not stable across Chromium builds —
+   * Chrome 156.0.8078.48 reports `STATUS_BREAKPOINT`, a CI runner with a
+   * different build reports another code — so requiring one specific value
+   * would turn a known incompatibility back into an opaque failure on any
+   * other machine. The exit code is still reported in the error details.
+   *
+   * The runtime applied the requested isolation correctly; the browser refuses
+   * to run inside it, so the request must not be reported as a generic
+   * failure.
    */
-  private assertBrowserDidNotAbort(
+  private assertBrowserCanRunUnderIsolation(
     exitCode: number,
     isolation: IsolationPreference,
   ): void {
-    if (exitCode !== STATUS_BREAKPOINT || isolation === "managed") {
+    if (isolation === "managed") {
       return;
     }
+    const reason =
+      exitCode === STATUS_BREAKPOINT
+        ? "status_breakpoint"
+        : "early_exit_under_restricted_isolation";
+    const how =
+      reason === "status_breakpoint"
+        ? `Chrome aborted during startup with STATUS_BREAKPOINT (${String(exitCode)})`
+        : `Chrome exited during startup with code ${String(exitCode)}`;
     throw new BrowserAdapterError(
       "unsupported_isolation",
-      `Chrome aborted during startup with STATUS_BREAKPOINT (${String(exitCode)}): the Chromium browser process cannot start its own sandbox inside a ${isolationLabel(isolation)} token. Use the managed Job Object isolation for Chrome.`,
-      { isolation, exitCode, reason: "status_breakpoint" },
+      `${how}: the Chromium browser process cannot start its own sandbox inside a ${isolationLabel(isolation)} token. Use the managed Job Object isolation for Chrome.`,
+      { isolation, exitCode, reason },
     );
   }
 
@@ -1198,7 +1218,7 @@ export class EnvironmentService {
     if (status?.state.state !== "exited") {
       return;
     }
-    this.assertBrowserDidNotAbort(
+    this.assertBrowserCanRunUnderIsolation(
       status.state.exitCode,
       resolved.config.runtimePolicy.isolation,
     );

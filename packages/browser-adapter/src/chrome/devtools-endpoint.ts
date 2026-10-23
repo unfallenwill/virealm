@@ -23,6 +23,8 @@ export interface WaitForEndpointOptions {
 export interface AliveCheck {
   readonly alive: boolean;
   readonly detail?: string;
+  /** Exit code reported by the runtime, when the process is already gone. */
+  readonly exitCode?: number;
 }
 
 /**
@@ -81,7 +83,9 @@ export async function waitForDevToolsEndpoint(
           "browser_exited",
           alive.detail ??
             "Chrome exited before publishing its debugging endpoint",
-          { userDataDir },
+          alive.exitCode === undefined
+            ? { userDataDir }
+            : { userDataDir, exitCode: alive.exitCode },
         );
       }
       lastDetail = alive.detail;

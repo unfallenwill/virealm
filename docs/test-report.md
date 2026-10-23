@@ -39,10 +39,20 @@
 | `contracts:lint` / `format:check` / `typecheck` | 通过 |
 | `contracts:test` | 通过：80 个测试 |
 | `contracts:build` | 通过 |
+| `runtime-client:lint` / `format:check` / `typecheck` | 通过 |
+| `runtime-client:test` | 通过：24 个测试 |
+| `runtime-client:build` | 通过 |
 | `adapter:lint` / `format:check` / `typecheck` / `build` | 通过 |
-| `adapter:test` | 通过：235 个测试 |
+| `adapter:test` | 通过：236 个测试 |
 | `desktop:lint` / `format:check` / `typecheck` / `build` | 通过 |
 | `desktop:test` | 通过：240 个测试（11 个文件） |
+
+门禁的**顺序**也是门禁的一部分：类型感知的 ESLint 规则通过兄弟包构建出的
+`dist/*.d.ts` 解析类型，因此每个包的 lint 之前必须先构建它的依赖
+（`contracts` → `runtime-client` → `browser-adapter`）。这一点曾被本机上遗留的
+`dist/` 掩盖，CI 上暴露为 319 条 "type that could not be resolved" 错误；现在
+根 `check` 脚本按依赖拓扑排列，CI 的每个作业也显式构建依赖包，并且已在**删除
+全部 `dist/` 之后**实跑验证通过。
 
 ### 2.2 需要真实环境的门禁（单独执行）
 
@@ -57,6 +67,7 @@
 | 包 | 语句 | 分支 | 函数 | 行 |
 | --- | --- | --- | --- | --- |
 | `@virealm/contracts` | 99.04% | 94.52% | 100% | 99.02% |
+| `@virealm/runtime-client` | 95.05% | 94.02% | 93.33% | 95.05% |
 | `@virealm/browser-adapter` | 97.34% | 90.49% | 95.26% | 97.94% |
 | `@virealm/desktop` | 96.20% | 93.99% | 94.88% | 96.45% |
 
@@ -133,7 +144,17 @@
 | `reports an externally terminated browser without deleting its profile` | 外部终止后如实上报，**不**删除 Profile |
 | `force-stops the whole Chrome process tree and keeps the profile` | 强制停止整棵进程树，Profile 保留 |
 | `never downgrades an isolation policy the runtime does not support` | 能力不足时明确失败，不静默降级 |
-| `explains that Chromium cannot start inside a restricted token` | **真实**受限令牌下启动 Chrome：进程以 `STATUS_BREAKPOINT` 中止，适配器归类为 `unsupported_isolation` 并带上 `isolation` 与 `exitCode` |
+| `explains that Chromium cannot start inside a restricted token` | **真实**受限令牌下启动 Chrome：进程在启动阶段中止，适配器归类为 `unsupported_isolation` 并带上 `isolation`、`exitCode` 与 `reason`。用例不锁定某一个中止码（它随 Chromium 构建而变），但要求退出码确实被观测并返回 |
+
+### 3.2b Runtime Client（`packages/runtime-client`）
+
+**单元测试（24，1 个文件）**
+
+| 文件 | 数量 | 覆盖内容 |
+| --- | --- | --- |
+| `client.test.ts` | 24 | 命名管道协议 v2 的请求/响应、错误映射、超时与并发调用 |
+
+这一包的测试此前**不在**根 `check` 脚本里；现已纳入门禁。
 
 ### 3.3 阶段三：Desktop
 
@@ -256,11 +277,30 @@
 | --- | --- |
 | `crates/process-runtime/tests/windows_launch.rs::chrome_launches_in_managed_mode` | 需要本机 Chrome；该测试被 `#[ignore]` 标记，未在本报告中执行 |
 
-### 6.2 未在 CI 上执行
+### 6.2 CI 的执行情况
 
-- `.github/workflows/ci.yml` 已写好（含 `desktop` 作业：构建运行时、校验 Chrome、运行
-  lint/format/typecheck/test/build/集成测试），但**没有实际执行记录**。本报告全部
-  结果来自单台开发机。
+`.github/workflows/ci.yml` 已在本仓库（`unfallenwill/virealm`）上**实际执行**，
+分四个作业：`Process Runtime (Windows)`、`Contracts (Node)`、
+`Browser Adapter (Windows, real Chrome)`、`Desktop (Windows, Electron + real Chrome)`。
+
+前几次运行暴露了两个真实缺陷，都已修复：
+
+| 运行发现的问题 | 原因 | 处理 |
+| --- | --- | --- |
+| 三个 Node 作业在 `actions/setup-node` 处失败（`Unable to locate executable file: pnpm`） | `cache: pnpm` 需要先能调用 pnpm，而 `corepack enable` 排在 setup-node 之后 | 改用 `pnpm/action-setup` 先安装 pnpm，并设置 `COREPACK_ENABLE_DOWNLOAD_PROMPT=0` |
+| `adapter:lint` / `desktop:lint` 报 319 条 "type that could not be resolved" | 类型感知的 ESLint 规则要读兄弟包构建出的 `dist/*.d.ts`，而新克隆的仓库没有 `dist/` | 根 `check` 按依赖拓扑排序并在 lint 前构建依赖；CI 作业同样显式构建 |
+| 受限令牌集成测试在 CI 上失败 | 适配层原先只把 `0x80000003` 判为 `unsupported_isolation`，而 CI 运行器的 Chromium 构建中止码不同 | 改为按隔离模式判定，`exitCode` 随错误返回；用例不再锁定单一魔数 |
+
+CI 运行器是 GitHub 的 `windows-latest` / `ubuntu-latest`，其上安装的 Chrome 与
+本机版本不同、运行账户与本机也不同，因此 CI 结果不能替代本机结论：受限令牌
+与 AppContainer 下 Chromium 的中止码在 CI 上被实测为与本机不同，这本身就是
+「该结论只对特定 Chrome 版本成立」的直接证据。
+
+`Contracts (Node)`、`Process Runtime (Windows)` 与
+`Desktop (Windows, Electron + real Chrome)` 三个作业已在 CI 上通过；其中桌面作业
+跑的是真实 Chrome + 真实运行时 + Electron 端到端。
+`Browser Adapter (Windows, real Chrome)` 作业曾在上表第三行的问题上失败，修复后
+复跑的结果见本节末尾的补充记录。CI 仍**不能**覆盖本报告第 6.1 节列出的内容。
 
 ### 6.3 未验证的行为
 

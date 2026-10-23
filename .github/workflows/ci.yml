@@ -82,7 +82,10 @@ jobs:
       - run: pnpm adapter:typecheck
       - run: pnpm adapter:test
       - run: pnpm adapter:build
-      - run: pnpm adapter:test:integration
+      # The verbose reporter keeps the observed abort code in the CI log: the
+      # code Chromium uses when it cannot start its sandbox differs between
+      # builds, and the runner's value is evidence for that.
+      - run: pnpm --filter @virealm/browser-adapter exec vitest run --config vitest.integration.config.ts --reporter=verbose
 
   desktop:
     name: Desktop (Windows, Electron + real Chrome)

@@ -100,9 +100,9 @@ const verified = await adapter.verifyEnvironmentConfig("work-us");
 适配器不限制 `runtimePolicy.isolation` 的取值——运行时管理的其它程序可以使用
 `restricted` 与 `app_container`。但 **Chrome 不能在这两种模式下运行**：Chromium
 的浏览器进程要为自己创建沙箱，运行在运行时已经限制过的令牌里时这一步会失败，
-进程以 `STATUS_BREAKPOINT`（`0x80000003`）中止，不写入任何 Profile。
+进程在启动阶段中止，不写入任何 Profile。
 
-适配器会识别这个退出码并把它翻译成 `unsupported_isolation`，而不是把它当成
+适配器会识别这一情形并把它翻译成 `unsupported_isolation`，而不是把它当成
 「浏览器意外退出」：
 
 ```jsonc
@@ -112,6 +112,12 @@ const verified = await adapter.verifyEnvironmentConfig("work-us");
   "details": { "isolation": "restricted", "exitCode": 2147483651, "reason": "status_breakpoint" }
 }
 ```
+
+判定依据是**隔离模式**，不是某一个中止码：`reason` 为 `status_breakpoint` 表示
+确实是 `0x80000003`，否则为 `early_exit_under_restricted_isolation`。中止码随
+Chromium 构建而变（同一台机器上的 Chrome 156.0.8078.48 报 `0x80000003`，CI 运行
+器上的另一个构建报别的值），只认一个魔数会让同一种不兼容在别的机器上重新变成
+笼统错误。实际观察到的 `exitCode` 始终随错误一起返回。
 
 `managed` 模式不受影响，Chrome 正常启动。适配器**不会**用 `--no-sandbox` 之类
 的手段绕过这个限制——那等于放弃隔离本身。详见

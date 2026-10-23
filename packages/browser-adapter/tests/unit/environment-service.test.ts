@@ -369,6 +369,27 @@ describe("launchEnvironment", () => {
     });
   });
 
+  it("explains a browser that aborts with a build specific code under a restricted token", async () => {
+    const h = harness();
+    h.runtime.onLaunch = (_params, status) => {
+      // Chromium reports a different abort code on other builds; the
+      // classification must not depend on one magic number.
+      h.runtime.markExited(status.processInstanceId, 0xc0000005);
+    };
+    await expect(
+      h.service.launchEnvironment(
+        makeConfig({ runtimePolicy: { isolation: "restricted" } }),
+      ),
+    ).rejects.toMatchObject({
+      code: "unsupported_isolation",
+      details: {
+        isolation: "restricted",
+        exitCode: 0xc0000005,
+        reason: "early_exit_under_restricted_isolation",
+      },
+    });
+  });
+
   it("keeps the generic failure for a managed browser that aborts", async () => {
     const h = harness();
     h.runtime.onLaunch = (_params, status) => {
