@@ -20,6 +20,11 @@
     "contracts:typecheck": "corepack pnpm --filter @virealm/contracts typecheck",
     "contracts:test": "corepack pnpm --filter @virealm/contracts test",
     "contracts:build": "corepack pnpm --filter @virealm/contracts build",
+    "runtime-client:lint": "corepack pnpm --filter @virealm/runtime-client lint",
+    "runtime-client:format:check": "corepack pnpm --filter @virealm/runtime-client format:check",
+    "runtime-client:typecheck": "corepack pnpm --filter @virealm/runtime-client typecheck",
+    "runtime-client:test": "corepack pnpm --filter @virealm/runtime-client test",
+    "runtime-client:build": "corepack pnpm --filter @virealm/runtime-client build",
     "adapter:lint": "corepack pnpm --filter @virealm/browser-adapter lint",
     "adapter:format:check": "corepack pnpm --filter @virealm/browser-adapter format:check",
     "adapter:typecheck": "corepack pnpm --filter @virealm/browser-adapter typecheck",
@@ -35,6 +40,6 @@
     "desktop:build": "corepack pnpm --filter @virealm/desktop build",
     "desktop:test:integration": "corepack pnpm --filter @virealm/desktop test:integration",
     "desktop:package": "corepack pnpm --filter @virealm/desktop package",
-    "check": "corepack pnpm rust:fmt:check && corepack pnpm rust:clippy && corepack pnpm rust:test && corepack pnpm contracts:check-generated && corepack pnpm contracts:lint && corepack pnpm contracts:format:check && corepack pnpm contracts:typecheck && corepack pnpm contracts:test && corepack pnpm contracts:build && corepack pnpm adapter:lint && corepack pnpm adapter:format:check && corepack pnpm adapter:typecheck && corepack pnpm adapter:test && corepack pnpm adapter:build && corepack pnpm desktop:lint && corepack pnpm desktop:format:check && corepack pnpm desktop:typecheck && corepack pnpm desktop:test && corepack pnpm desktop:build"
+    "check": "corepack pnpm rust:fmt:check && corepack pnpm rust:clippy && corepack pnpm rust:test && corepack pnpm contracts:check-generated && corepack pnpm contracts:lint && corepack pnpm contracts:format:check && corepack pnpm contracts:typecheck && corepack pnpm contracts:test && corepack pnpm contracts:build && corepack pnpm runtime-client:lint && corepack pnpm runtime-client:format:check && corepack pnpm runtime-client:typecheck && corepack pnpm runtime-client:test && corepack pnpm runtime-client:build && corepack pnpm adapter:lint && corepack pnpm adapter:format:check && corepack pnpm adapter:typecheck && corepack pnpm adapter:test && corepack pnpm adapter:build && corepack pnpm desktop:lint && corepack pnpm desktop:format:check && corepack pnpm desktop:typecheck && corepack pnpm desktop:test && corepack pnpm desktop:build"
   }
 }

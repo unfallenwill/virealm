@@ -72,6 +72,11 @@ jobs:
           if (-not (Test-Path $chrome) -and -not $versioned) {
             throw "Chrome is required for the real-browser integration gate"
           }
+      # The type-aware ESLint rules read the sibling packages through their
+      # built declarations. A fresh checkout has no dist/ yet, so the
+      # dependencies are built first — the same order as the root `check`.
+      - run: pnpm contracts:build
+      - run: pnpm runtime-client:build
       - run: pnpm adapter:lint
       - run: pnpm adapter:format:check
       - run: pnpm adapter:typecheck
@@ -103,6 +108,12 @@ jobs:
           if (-not (Test-Path $chrome) -and -not $versioned) {
             throw "Chrome is required for the desktop integration gate"
           }
+      # The type-aware ESLint rules read the sibling packages through their
+      # built declarations. A fresh checkout has no dist/ yet, so the
+      # dependencies are built first — the same order as the root `check`.
+      - run: pnpm contracts:build
+      - run: pnpm runtime-client:build
+      - run: pnpm adapter:build
       - run: pnpm desktop:lint
       - run: pnpm desktop:format:check
       - run: pnpm desktop:typecheck
