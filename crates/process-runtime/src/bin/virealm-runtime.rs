@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use virealm_process_runtime::ipc::{DEFAULT_PIPE_NAME, serve};
+use virealm_process_runtime::ipc::{default_address, serve};
 use virealm_process_runtime::{
     AccessLevel, AccessRoot, CONTRACT_VERSION, ContainmentLimits, FileAccessPolicy, IsolationMode,
     LaunchSpec, NetworkAccess, PROTOCOL_VERSION, SecurityPolicy, launch, probe_capabilities,
@@ -20,7 +20,7 @@ use virealm_process_runtime::{
 const USAGE: &str = "\
 Usage:
   virealm-runtime probe
-  virealm-runtime serve [--pipe <name>]
+  virealm-runtime serve [--pipe <name-or-path>]
   virealm-runtime run --environment-id <id> --isolation <managed|restricted|app-container>
       --executable <path> --program-root <dir> [--program-root <dir> ...]
       --data-directory <dir> [--working-directory <dir>]
@@ -110,7 +110,7 @@ fn parse(mut arguments: Vec<OsString>) -> Result<Command, String> {
         }
         "serve" => {
             arguments.remove(0);
-            let mut pipe = DEFAULT_PIPE_NAME.to_owned();
+            let mut pipe = default_address();
             while let Some(flag) = arguments.first() {
                 let flag = flag
                     .to_str()

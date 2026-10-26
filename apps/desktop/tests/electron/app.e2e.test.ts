@@ -15,8 +15,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const appRoot = path.resolve(import.meta.dirname, "..", "..");
 const mainEntry = path.join(appRoot, "dist", "main", "index.js");
 const rendererEntry = path.join(appRoot, "dist", "renderer", "index.html");
+const runtimeFileName =
+  process.platform === "win32" ? "virealm-runtime.exe" : "virealm-runtime";
 const runtimeExecutable = fileURLToPath(
-  new URL("../../../../target/debug/virealm-runtime.exe", import.meta.url),
+  new URL(`../../../../target/debug/${runtimeFileName}`, import.meta.url),
 );
 
 const require = createRequire(import.meta.url);

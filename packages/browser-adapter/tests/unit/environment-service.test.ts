@@ -7,6 +7,7 @@ import {
 } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -19,11 +20,13 @@ import {
   FakePage,
   FakeSession,
   launchConfigPath,
+  macosCapabilities,
   makeConfig,
   publishEndpoint,
   requireValue,
   supportedCapabilities,
   TEST_CHROME,
+  TEST_MAC_CHROME,
   userDataDirFrom,
   TEST_CHROME_VERSION,
   TEST_ENDPOINT,
@@ -207,6 +210,90 @@ describe("launchEnvironment", () => {
       ),
     ).rejects.toMatchObject({ code: "unsupported_isolation" });
     expect(h.runtime.launches).toEqual([]);
+  });
+
+  it("launches managed Chrome under a macOS process group", async () => {
+    const h = harness({
+      discovery: new FakeDiscovery([
+        {
+          executablePath: TEST_MAC_CHROME,
+          version: TEST_CHROME_VERSION,
+          source: "test",
+        },
+      ]),
+    });
+    h.runtime.capabilities = macosCapabilities();
+    publishEndpoint(h.runtime);
+
+    const result = await h.service.launchEnvironment(
+      makeConfig({
+        browser: {
+          executablePath: TEST_MAC_CHROME,
+          version: TEST_CHROME_VERSION,
+        },
+      }),
+    );
+
+    expect(result.status.state).toBe("running");
+    const launch = requireValue(h.runtime.launches[0]);
+    expect(launch.policy.isolation).toBe("managed");
+    if (process.platform === "darwin") {
+      expect(launch.policy.allowedProgramRoots).toEqual([
+        path.join(tmpdir(), "VirealmTestChrome.app"),
+      ]);
+    }
+  });
+
+  it("refuses restricted and AppContainer isolation on macOS", async () => {
+    for (const isolation of ["restricted", "app_container"] as const) {
+      const h = harness();
+      h.runtime.capabilities = macosCapabilities();
+      publishEndpoint(h.runtime);
+      await expect(
+        h.service.launchEnvironment(
+          makeConfig({ runtimePolicy: { isolation } }),
+        ),
+      ).rejects.toMatchObject({
+        code: "unsupported_isolation",
+        details: { platform: "macos", supportedIsolation: "managed" },
+      });
+      expect(h.runtime.launches).toEqual([]);
+    }
+  });
+
+  it("requires the process-group capability on macOS", async () => {
+    const h = harness();
+    h.runtime.capabilities = macosCapabilities({
+      processGroup: { state: "unsupported", detail: "probe failed" },
+    });
+    publishEndpoint(h.runtime);
+
+    await expect(
+      h.service.launchEnvironment(makeConfig()),
+    ).rejects.toMatchObject({
+      code: "unsupported_isolation",
+      details: { capability: "processGroup", state: "unsupported" },
+    });
+    expect(h.runtime.launches).toEqual([]);
+  });
+
+  it("refuses per-tree limits on macOS before launching", async () => {
+    for (const limits of [
+      { maxProcesses: 12 },
+      { memoryLimitBytes: 1_000_000 },
+    ]) {
+      const h = harness();
+      h.runtime.capabilities = macosCapabilities();
+      publishEndpoint(h.runtime);
+      await expect(
+        h.service.launchEnvironment(
+          makeConfig({
+            runtimePolicy: { isolation: "managed", ...limits },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: "invalid_configuration" });
+      expect(h.runtime.launches).toEqual([]);
+    }
   });
 
   it("requires the AppContainer capability pair", async () => {

@@ -36,6 +36,13 @@ export const TEST_CHROME = path.join(
   TEST_CHROME_VERSION,
   "chrome.exe",
 );
+export const TEST_MAC_CHROME = path.join(
+  tmpdir(),
+  "VirealmTestChrome.app",
+  "Contents",
+  "MacOS",
+  "Google Chrome",
+);
 export const TEST_ENDPOINT = "ws://127.0.0.1:45678/devtools/browser/fake";
 
 export function supportedCapabilities(
@@ -55,6 +62,34 @@ export function supportedCapabilities(
     restrictedToken: { state: "supported" },
     processMitigation: { state: "supported" },
     etw: { state: "supported" },
+    ...overrides,
+  };
+}
+
+/** A macOS report: Windows-only entries are unsupported, process groups run. */
+export function macosCapabilities(
+  overrides: Partial<CapabilityReport> = {},
+): CapabilityReport {
+  return {
+    platform: {
+      os: "macos",
+      version: { major: 27, minor: 0, build: 1 },
+      osVersion: "27.0.1",
+      architecture: "arm64",
+      elevated: false,
+      integrityLevel: "unknown",
+    },
+    jobObject: { state: "unsupported" },
+    appContainer: { state: "unsupported" },
+    appContainerAcl: { state: "unsupported" },
+    restrictedToken: { state: "unsupported" },
+    processMitigation: { state: "unsupported" },
+    etw: { state: "unsupported" },
+    processGroup: { state: "supported" },
+    resourceLimits: {
+      maxProcesses: { state: "unavailable" },
+      memoryLimit: { state: "unavailable" },
+    },
     ...overrides,
   };
 }
@@ -111,13 +146,20 @@ export class FakeRuntime implements RuntimePort {
           : { state: "starting" },
       applied: {
         mode: params.policy.isolation,
-        jobObjectAttached: true,
+        jobObjectAttached: this.capabilities.platform.os !== "macos",
         appContainerToken: params.policy.isolation === "app_container",
         restrictedToken: params.policy.isolation === "restricted",
         lowIntegrity: params.policy.isolation !== "managed",
         fileAccessRestricted: params.policy.isolation === "app_container",
         networkAccess: params.policy.networkAccess,
         networkCapabilitiesVerified: true,
+        ...(this.capabilities.platform.os === "macos"
+          ? {
+              processGroupAttached: true,
+              processGroupId: pid,
+              killOnCloseArmed: true,
+            }
+          : {}),
       },
     };
     this.statuses.set(status.processInstanceId, status);
@@ -598,6 +640,7 @@ export function createHarness(options: HarnessOptions = {}): Harness {
     discovery,
     stateStore: store,
     localAppData: path.join(root, "local-app-data"),
+    homeDirectory: path.join(root, "home"),
     ...(options.timeouts === undefined ? {} : { timeouts: options.timeouts }),
     ...(options.networkProbeUrl === undefined
       ? {}

@@ -67,31 +67,89 @@ describe("resolveProfileLayout", () => {
 });
 
 describe("path helpers", () => {
-  it("recognises descendants case-insensitively", () => {
-    expect(isPathInside("C:\\Root", "C:\\Root\\Child")).toBe(true);
-    expect(isPathInside("C:\\Root", "C:\\Root")).toBe(true);
-    expect(isPathInside("C:\\Root", "C:\\Other")).toBe(false);
+  it("recognises Windows descendants case-insensitively", () => {
+    expect(isPathInside("C:\\Root", "C:\\Root\\Child", "win32")).toBe(true);
+    expect(isPathInside("C:\\Root", "C:\\root\\child", "win32")).toBe(true);
+    expect(isPathInside("C:\\Root", "C:\\Root", "win32")).toBe(true);
+    expect(isPathInside("C:\\Root", "C:\\Other", "win32")).toBe(false);
   });
 
-  it("detects Chrome's default profile roots", () => {
+  it("keeps macOS paths case-sensitive", () => {
+    expect(isPathInside("/Users/a/Root", "/Users/a/Root/Child", "darwin")).toBe(
+      true,
+    );
+    expect(isPathInside("/Users/a/Root", "/Users/a/root/Child", "darwin")).toBe(
+      false,
+    );
+  });
+
+  it("detects Chrome's Windows default profile roots", () => {
     const localAppData = "C:\\Users\\tester\\AppData\\Local";
     expect(
       isDefaultChromeProfilePath(
-        path.join(localAppData, "Google", "Chrome", "User Data"),
-        localAppData,
+        path.win32.join(localAppData, "Google", "Chrome", "User Data"),
+        { localAppData, platform: "win32" },
       ),
     ).toBe(true);
     expect(
       isDefaultChromeProfilePath(
-        path.join(localAppData, "Chromium", "User Data", "Profile 1"),
-        localAppData,
+        path.win32.join(localAppData, "Chromium", "User Data", "Profile 1"),
+        { localAppData, platform: "win32" },
       ),
     ).toBe(true);
     expect(
-      isDefaultChromeProfilePath("C:\\VirealmData\\env_a", localAppData),
+      isDefaultChromeProfilePath("C:\\VirealmData\\env_a", {
+        localAppData,
+        platform: "win32",
+      }),
     ).toBe(false);
     expect(
-      isDefaultChromeProfilePath("C:\\VirealmData\\env_a", undefined),
+      isDefaultChromeProfilePath("C:\\VirealmData\\env_a", {
+        platform: "win32",
+      }),
+    ).toBe(false);
+  });
+
+  it("detects Chrome's macOS default profile roots", () => {
+    const homeDirectory = "/Users/tester";
+    const support = path.posix.join(
+      homeDirectory,
+      "Library",
+      "Application Support",
+    );
+
+    expect(
+      isDefaultChromeProfilePath(path.posix.join(support, "Google", "Chrome"), {
+        homeDirectory,
+        platform: "darwin",
+      }),
+    ).toBe(true);
+    expect(
+      isDefaultChromeProfilePath(
+        path.posix.join(support, "Google", "Chrome", "Default", "Cookies"),
+        { homeDirectory, platform: "darwin" },
+      ),
+    ).toBe(true);
+    expect(
+      isDefaultChromeProfilePath(
+        path.posix.join(support, "Chromium", "Default"),
+        {
+          homeDirectory,
+          platform: "darwin",
+        },
+      ),
+    ).toBe(true);
+    expect(
+      isDefaultChromeProfilePath(path.posix.join(support, "Google", "chrome"), {
+        homeDirectory,
+        platform: "darwin",
+      }),
+    ).toBe(false);
+    expect(
+      isDefaultChromeProfilePath("/Users/tester/Virealm/env_a", {
+        homeDirectory,
+        platform: "darwin",
+      }),
     ).toBe(false);
   });
 });

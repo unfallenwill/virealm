@@ -8,8 +8,8 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 32767,
-      "pattern": "^(?:[A-Za-z]:[\\\\/]|\\\\\\\\).*$",
-      "description": "Absolute Windows path (drive-qualified or UNC). Relative paths are rejected before any process is created."
+      "pattern": "^(?:[A-Za-z]:[\\\\/]|\\\\\\\\|/).*$",
+      "description": "Absolute Windows path (drive-qualified or UNC) or POSIX absolute path. Relative paths are rejected before any process is created."
     },
     "CommandLineArgument": {
       "type": "string",

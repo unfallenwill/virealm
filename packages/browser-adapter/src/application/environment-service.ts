@@ -1,4 +1,3 @@
-import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type {
@@ -19,6 +18,7 @@ import {
   waitForDevToolsEndpoint,
 } from "../chrome/devtools-endpoint.js";
 import { assertDirectoryWritable, prepareProfile } from "../chrome/profile.js";
+import { chromeInstallRoot, pathKey, samePath } from "../platform/paths.js";
 import { EnvironmentConfigApplier } from "../environment/config-applier.js";
 import {
   validateEnvironment,
@@ -86,6 +86,10 @@ export interface EnvironmentServiceOptions {
   readonly stateStore: RuntimeStateStorePort;
   /** Used only to reject Chrome's default profile roots. */
   readonly localAppData?: string;
+  /** macOS: home directory whose Chrome profile roots must be refused. */
+  readonly homeDirectory?: string;
+  /** Path semantics for comparisons. Defaults to the host platform. */
+  readonly platform?: string;
   readonly now?: () => number;
   readonly timeouts?: Partial<EnvironmentTimeouts>;
   /** Controlled endpoint returning `{ "acceptLanguage": "..." }`. */
@@ -620,6 +624,8 @@ export class EnvironmentService {
       dataRoot: this.options.dataRoot,
       discovery: this.options.discovery,
       localAppData: this.options.localAppData,
+      homeDirectory: this.options.homeDirectory,
+      platform: this.options.platform,
     };
   }
 
@@ -682,11 +688,15 @@ export class EnvironmentService {
   }
 
   private assertNoSharedProfile(resolved: ResolvedBrowserEnvironment): void {
-    const candidate = normalizePath(resolved.profile.userDataDir);
+    const candidate = pathKey(
+      resolved.profile.userDataDir,
+      this.options.platform,
+    );
     for (const active of this.active.values()) {
       if (
         active.resolved.config.id !== resolved.config.id &&
-        normalizePath(active.resolved.profile.userDataDir) === candidate
+        pathKey(active.resolved.profile.userDataDir, this.options.platform) ===
+          candidate
       ) {
         throw new BrowserAdapterError(
           "data_directory_conflict",
@@ -1302,7 +1312,10 @@ function buildLaunchParams(
   argumentsList: readonly string[],
 ): LaunchParams {
   const isolation = resolved.config.runtimePolicy.isolation;
-  const installRoot = path.dirname(resolved.browser.executablePath);
+  const installRoot = chromeInstallRoot(
+    resolved.browser.executablePath,
+    process.platform,
+  );
   const containment = {
     killOnClose: true as const,
     ...(resolved.config.runtimePolicy.maxProcesses === undefined
@@ -1359,6 +1372,12 @@ function assertIsolation(
   resolved: ResolvedBrowserEnvironment,
 ): void {
   const isolation = resolved.config.runtimePolicy.isolation;
+
+  if (capabilities.platform.os === "macos") {
+    assertMacosIsolation(capabilities, resolved, isolation);
+    return;
+  }
+
   const requirements: readonly {
     readonly name: string;
     readonly capability: Capability;
@@ -1405,6 +1424,74 @@ function assertIsolation(
   }
 }
 
+/**
+ * macOS only implements the managed tier, as a POSIX process group.
+ *
+ * `restricted` and `app_container` have no equivalent there and are refused
+ * instead of being mapped onto a weaker mechanism. Per-tree process and
+ * memory limits have no primitive either, so a configuration that asks for
+ * them is rejected before Chrome starts.
+ */
+function assertMacosIsolation(
+  capabilities: CapabilityReport,
+  resolved: ResolvedBrowserEnvironment,
+  isolation: IsolationPreference,
+): void {
+  if (isolation !== "managed") {
+    throw new BrowserAdapterError(
+      "unsupported_isolation",
+      `runtime isolation "${isolation}" is only available on Windows; macOS provides the managed process-group tier`,
+      {
+        environmentId: resolved.config.id,
+        isolation,
+        platform: "macos",
+        supportedIsolation: "managed",
+      },
+    );
+  }
+
+  const capability = capabilities.processGroup;
+  if (capability?.state !== "supported") {
+    throw new BrowserAdapterError(
+      "unsupported_isolation",
+      `runtime isolation "managed" needs the processGroup capability, which is ${
+        capability?.state ?? "not reported"
+      }`,
+      {
+        environmentId: resolved.config.id,
+        isolation,
+        capability: "processGroup",
+        state: capability?.state ?? "missing",
+        detail: capability?.detail,
+      },
+    );
+  }
+
+  const policy = resolved.config.runtimePolicy;
+  if (policy.maxProcesses !== undefined) {
+    throw new BrowserAdapterError(
+      "invalid_configuration",
+      "maxProcesses is not supported on macOS: no per-tree process limit exists",
+      {
+        environmentId: resolved.config.id,
+        platform: "macos",
+        field: "runtimePolicy.maxProcesses",
+      },
+    );
+  }
+  if (policy.memoryLimitBytes !== undefined) {
+    throw new BrowserAdapterError(
+      "invalid_configuration",
+      "memoryLimitBytes is not supported on macOS: no per-tree memory limit exists",
+      {
+        environmentId: resolved.config.id,
+        platform: "macos",
+        field: "runtimePolicy.memoryLimitBytes",
+      },
+    );
+  }
+}
+
 function assertSameRunningConfiguration(
   current: ResolvedBrowserEnvironment,
   next: ResolvedBrowserEnvironment,
@@ -1419,12 +1506,14 @@ function assertSameRunningConfiguration(
       },
     );
   }
-  const profileChanged =
-    normalizePath(current.profile.userDataDir) !==
-    normalizePath(next.profile.userDataDir);
-  const executableChanged =
-    current.browser.executablePath.toLowerCase() !==
-    next.browser.executablePath.toLowerCase();
+  const profileChanged = !samePath(
+    current.profile.userDataDir,
+    next.profile.userDataDir,
+  );
+  const executableChanged = !samePath(
+    current.browser.executablePath,
+    next.browser.executablePath,
+  );
   const policyChanged =
     current.config.runtimePolicy.isolation !==
       next.config.runtimePolicy.isolation ||
@@ -1451,10 +1540,7 @@ function assertProfileMatchesRecord(
   resolved: ResolvedBrowserEnvironment,
   persisted: PersistedRuntimeState,
 ): void {
-  if (
-    normalizePath(resolved.profile.userDataDir) !==
-    normalizePath(persisted.userDataDir)
-  ) {
+  if (!samePath(resolved.profile.userDataDir, persisted.userDataDir)) {
     throw new BrowserAdapterError(
       "invalid_configuration",
       "the configuration now points at a different Chrome data directory than the running browser",
@@ -1512,13 +1598,6 @@ function normalizeBrowserVersion(version: string): string {
     .trim()
     .replace(/^(?:Headless)?Chrome\//i, "")
     .trim();
-}
-
-function normalizePath(candidate: string): string {
-  return path
-    .resolve(candidate)
-    .replace(/[\\/]+$/, "")
-    .toLowerCase();
 }
 
 function isLoopbackHost(hostname: string): boolean {

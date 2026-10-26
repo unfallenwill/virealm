@@ -1,14 +1,12 @@
 //! Process identity, status and lifecycle.
 
-use std::ffi::OsString;
-use std::os::windows::io::{AsRawHandle, OwnedHandle};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::diagnostics::DiagnosticEvent;
 use crate::error::Result;
-use crate::platform::windows::process as platform_process;
+use crate::platform::ProcessHandle;
 use crate::policy::{IsolationMode, NetworkAccess};
 
 /// Durable process identity.
@@ -63,6 +61,15 @@ pub struct AppliedIsolation {
     pub network_access: NetworkAccess,
     /// True when the child token's capability SIDs matched the network policy.
     pub network_capabilities_verified: bool,
+    /// macOS: the child was created in its own POSIX process group.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_group_attached: Option<bool>,
+    /// macOS: the process group id of the managed tree.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_group_id: Option<u32>,
+    /// macOS: closing the runtime kills the group.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kill_on_close_armed: Option<bool>,
 }
 
 /// Status snapshot for a managed process.
@@ -89,18 +96,14 @@ impl ProcessStatus {
 
 /// A process owned by the runtime.
 ///
-/// Dropping the value closes the Job Object handle. Because the job was
-/// configured with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, that terminates every
-/// process still in the tree. Call [`ManagedProcess::terminate`] for an
-/// explicit, observable shutdown.
-///
-/// Field order is load-bearing: the job handle must close before the process
-/// handle so the tree is terminated even on drop.
+/// Dropping the value tears down the managed tree: on Windows the Job Object
+/// handle closes (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`), on macOS the process
+/// group is killed. Call [`ManagedProcess::terminate`] for an explicit,
+/// observable shutdown.
 #[derive(Debug)]
 pub struct ManagedProcess {
     id: ProcessId,
-    job: Option<OwnedHandle>,
-    process: OwnedHandle,
+    handle: ProcessHandle,
     applied: AppliedIsolation,
     state: ProcessState,
     diagnostics: Vec<DiagnosticEvent>,
@@ -109,16 +112,14 @@ pub struct ManagedProcess {
 impl ManagedProcess {
     pub(crate) fn new(
         id: ProcessId,
-        job: Option<OwnedHandle>,
-        process: OwnedHandle,
+        handle: ProcessHandle,
         applied: AppliedIsolation,
         initial_state: ProcessState,
         diagnostics: Vec<DiagnosticEvent>,
     ) -> Self {
         Self {
             id,
-            job,
-            process,
+            handle,
             applied,
             state: initial_state,
             diagnostics,
@@ -140,14 +141,14 @@ impl ManagedProcess {
         &self.diagnostics
     }
 
-    /// Last known state. Use [`ManagedProcess::status`] to query Windows.
+    /// Last known state. Use [`ManagedProcess::status`] to query the OS.
     pub fn state(&self) -> ProcessState {
         self.state
     }
 
     /// Query the operating system for the current status.
     pub fn status(&self) -> Result<ProcessStatus> {
-        platform_process::query_status(self.process.as_raw_handle().cast(), self.id, &self.applied)
+        self.handle.status(self.id, &self.applied)
     }
 
     /// Wait up to `timeout` for exit.
@@ -155,12 +156,7 @@ impl ManagedProcess {
     /// Returns `Running` when the timeout elapses. A zero timeout performs a
     /// non-blocking poll.
     pub fn wait(&mut self, timeout: Duration) -> Result<ProcessStatus> {
-        let status = platform_process::wait_for_status(
-            self.process.as_raw_handle().cast(),
-            self.id,
-            &self.applied,
-            timeout,
-        )?;
+        let status = self.handle.wait(self.id, &self.applied, timeout)?;
         self.state = status.state;
         Ok(status)
     }
@@ -170,26 +166,10 @@ impl ManagedProcess {
     /// Idempotent: calling it after exit still terminates any remaining
     /// children in the job and returns the main process status.
     pub fn terminate(&mut self) -> Result<ProcessStatus> {
-        let status = platform_process::terminate_and_wait(
-            self.job
-                .as_ref()
-                .map(|handle| handle.as_raw_handle().cast()),
-            self.process.as_raw_handle().cast(),
-            self.id,
-            &self.applied,
-        )?;
+        let status = self.handle.terminate(self.id, &self.applied)?;
         self.state = status.state;
         Ok(status)
     }
-}
-
-/// Convenience conversion used by the launch path.
-pub(crate) fn os_string_is_ascii_case_insensitive(a: &OsString, b: &OsString) -> bool {
-    use std::os::windows::ffi::OsStrExt;
-
-    let a: Vec<u16> = a.encode_wide().collect();
-    let b: Vec<u16> = b.encode_wide().collect();
-    crate::platform::windows::wide::slice_eq_ignore_ascii_case(&a, &b)
 }
 
 #[cfg(test)]
@@ -216,6 +196,9 @@ mod tests {
             file_access_restricted: false,
             network_access: NetworkAccess::Allow,
             network_capabilities_verified: false,
+            process_group_attached: None,
+            process_group_id: None,
+            kill_on_close_armed: None,
         };
         let id = ProcessId {
             pid: 1,
@@ -237,17 +220,5 @@ mod tests {
         };
         assert_eq!(exited.exit_code(), Some(9));
         assert!(!exited.is_running());
-    }
-
-    #[test]
-    fn ascii_case_insensitive_comparison() {
-        assert!(os_string_is_ascii_case_insensitive(
-            &OsString::from("Path"),
-            &OsString::from("PATH")
-        ));
-        assert!(!os_string_is_ascii_case_insensitive(
-            &OsString::from("Path"),
-            &OsString::from("Paths")
-        ));
     }
 }

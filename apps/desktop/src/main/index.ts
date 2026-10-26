@@ -192,8 +192,21 @@ async function wire(): Promise<WiredApp> {
 }
 
 async function start(): Promise<void> {
-  Menu.setApplicationMenu(null);
-  app.setAppUserModelId("com.virealm.desktop");
+  if (process.platform === "darwin") {
+    // macOS needs the standard menu for Cmd+C/V/Q and the app menu.
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        { role: "appMenu" },
+        { role: "editMenu" },
+        { role: "windowMenu" },
+      ]),
+    );
+  } else {
+    Menu.setApplicationMenu(null);
+  }
+  if (process.platform === "win32") {
+    app.setAppUserModelId("com.virealm.desktop");
+  }
 
   try {
     wired = await wire();

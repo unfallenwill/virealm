@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 import {
@@ -21,6 +23,12 @@ import {
   BrowserAdapterError,
   isBrowserAdapterError,
 } from "../../src/domain/errors.js";
+
+function missingEndpoint(): string {
+  return process.platform === "win32"
+    ? `\\\\.\\pipe\\virealm-missing-${randomUUID()}`
+    : path.join(tmpdir(), `vr-${randomUUID().slice(0, 8)}.sock`);
+}
 
 const launchParams: LaunchParams = {
   environmentId: "env_a",
@@ -93,7 +101,7 @@ describe("translateRuntimeError", () => {
 describe("ProcessRuntimeClient", () => {
   it("reports an unavailable runtime for every operation", async () => {
     const client = new ProcessRuntimeClient({
-      pipePath: `\\\\.\\pipe\\virealm-missing-${randomUUID()}`,
+      pipePath: missingEndpoint(),
       connectTimeoutMs: 200,
       requestTimeoutMs: 200,
     });
@@ -120,7 +128,7 @@ describe("ProcessRuntimeClient", () => {
 
   it("wraps a client the caller already owns", async () => {
     const owned = new RuntimeClient({
-      pipePath: `\\\\.\\pipe\\virealm-missing-${randomUUID()}`,
+      pipePath: missingEndpoint(),
       connectTimeoutMs: 200,
       requestTimeoutMs: 200,
     });

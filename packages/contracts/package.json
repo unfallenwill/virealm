@@ -1,6 +1,6 @@
 {
   "name": "@virealm/contracts",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Versioned JSON Schema protocol and runtime validators shared by the Virealm process runtime and its TypeScript callers.",
   "type": "module",

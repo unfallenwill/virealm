@@ -22,9 +22,11 @@ import {
   type ValidationIssue,
 } from "../../shared/validation.js";
 import {
-  BROWSER_INCOMPATIBLE_ISOLATION,
-  BROWSER_INCOMPATIBLE_DETAIL,
+  browserIncompatibleDetail,
+  browserIncompatibleIsolation,
   isBrowserCompatibleIsolation,
+  isMacosPlatform,
+  supportsResourceLimits,
 } from "../../shared/isolation.js";
 import { errorCopy, isApiError, unwrap } from "../lib/api.js";
 import { issueText } from "../lib/validation-copy.js";
@@ -54,32 +56,48 @@ interface FormState {
   readonly extraArguments: string;
 }
 
-const ISOLATION_COPY: Readonly<
-  Record<
-    IsolationMode,
-    {
-      readonly title: string;
-      readonly hint: string;
-      readonly capability: string;
-    }
-  >
-> = {
+interface IsolationCopy {
+  readonly title: string;
+  readonly hint: string;
+}
+
+const WINDOWS_ISOLATION_COPY: Readonly<Record<IsolationMode, IsolationCopy>> = {
   managed: {
     title: "Job Object 管理",
     hint: "由本地运行时把 Chrome 进程树纳入 Job Object，应用退出时可完整停止受管进程。",
-    capability: "jobObject",
   },
   restricted: {
     title: "受限令牌",
-    hint: "以降低权限的令牌启动进程，减少对用户会话资源的访问。Chromium 的浏览器进程无法在被限制的令牌下启动自己的沙箱，因此不适用于 Chrome。",
-    capability: "restrictedToken",
+    hint: "以降低权限的令牌启动进程。Chromium 的浏览器进程无法在被限制的令牌下启动自己的沙箱，因此不适用于 Chrome。",
   },
   app_container: {
     title: "AppContainer",
-    hint: "使用 AppContainer 与目录 ACL 限制文件与网络访问。运行时支持它，但 Chromium 的浏览器进程无法在容器令牌下启动自己的沙箱，因此不适用于 Chrome。",
-    capability: "appContainer",
+    hint: "使用 AppContainer 与目录 ACL 限制文件与网络访问。Chromium 的浏览器进程无法在容器令牌下启动自己的沙箱，因此不适用于 Chrome。",
   },
 };
+
+const MACOS_ISOLATION_COPY: Readonly<Record<IsolationMode, IsolationCopy>> = {
+  managed: {
+    title: "进程组管理",
+    hint: "由本地运行时把 Chrome 及其受管子进程放进同一 POSIX 进程组，停止或退出时终止整组。它不是文件或网络沙箱。",
+  },
+  restricted: {
+    title: "受限令牌",
+    hint: "macOS 不提供受限令牌隔离；该模式只能在 Windows 上使用，运行时不会模拟或降级。",
+  },
+  app_container: {
+    title: "AppContainer",
+    hint: "macOS 不提供 AppContainer 隔离；该模式只能在 Windows 上使用，运行时不会模拟或降级。",
+  },
+};
+
+function isolationCopy(
+  platformOs: string | undefined,
+): typeof WINDOWS_ISOLATION_COPY {
+  return isMacosPlatform(platformOs)
+    ? MACOS_ISOLATION_COPY
+    : WINDOWS_ISOLATION_COPY;
+}
 
 const COMMON_TIMEZONES = [
   "UTC",
@@ -132,11 +150,19 @@ export function EnvironmentEditor({
   onSubmit,
 }: EnvironmentEditorProps): JSX.Element {
   const formId = useId();
+  const platformOs = runtime?.platform?.os;
+  const macos = isMacosPlatform(platformOs);
+  const copies = isolationCopy(platformOs);
+  const limitsSupported = supportsResourceLimits(platformOs);
+  const incompatible = browserIncompatibleIsolation();
   const initial = useMemo(
     () => initialState(environment, defaultBrowserPath),
     [environment, defaultBrowserPath],
   );
-  const baseline = useMemo(() => JSON.stringify(toDraft(initial)), [initial]);
+  const baseline = useMemo(
+    () => JSON.stringify(toDraft(initial, platformOs)),
+    [initial, platformOs],
+  );
   const [form, setForm] = useState<FormState>(initial);
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
   const [attempted, setAttempted] = useState(false);
@@ -169,7 +195,7 @@ export function EnvironmentEditor({
     };
   }, []);
 
-  const draft = useMemo(() => toDraft(form), [form]);
+  const draft = useMemo(() => toDraft(form, platformOs), [form, platformOs]);
   const parsed = useMemo(() => parseEnvironmentDraft(draft), [draft]);
 
   const localIssues = useMemo<readonly ValidationIssue[]>(() => {
@@ -178,7 +204,7 @@ export function EnvironmentEditor({
       issues.push({
         path: "browser.executablePath",
         code: "required",
-        message: "请选择或输入 chrome.exe 的路径。",
+        message: "请选择或输入 Chrome 可执行文件的路径。",
       });
     }
     return issues;
@@ -298,7 +324,7 @@ export function EnvironmentEditor({
                   : "窗口默认"}
               </span>
               <span aria-hidden="true">·</span>
-              <span>{ISOLATION_COPY[form.isolation].title}</span>
+              <span>{copies[form.isolation].title}</span>
             </div>
             <Button onClick={requestClose} disabled={saving}>
               取消
@@ -407,7 +433,7 @@ export function EnvironmentEditor({
               />
               <Choice
                 checked={form.browserMode === "manual"}
-                title="指定 chrome.exe"
+                title="指定 Chrome 可执行文件"
                 hint="固定使用某个 Chrome 可执行文件，适合多版本或便携版。"
                 onSelect={() => {
                   update("browserMode", "manual");
@@ -425,7 +451,11 @@ export function EnvironmentEditor({
                     id={`${formId}-browser`}
                     className="input mono"
                     value={form.browserPath}
-                    placeholder="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+                    placeholder={
+                      macos
+                        ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+                        : "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+                    }
                     spellCheck={false}
                     aria-invalid={
                       visibleError("browser.executablePath") !== undefined
@@ -787,8 +817,7 @@ export function EnvironmentEditor({
               {(["managed", "restricted", "app_container"] as const).map(
                 (mode) => {
                   const capability = capabilityFor(runtime, mode);
-                  const browserIncompatible =
-                    BROWSER_INCOMPATIBLE_ISOLATION.has(mode);
+                  const browserIncompatible = incompatible.has(mode);
                   const disabled =
                     (browserIncompatible || unsupportedIsolation.has(mode)) &&
                     form.isolation !== mode;
@@ -796,12 +825,12 @@ export function EnvironmentEditor({
                     <Choice
                       key={mode}
                       checked={form.isolation === mode}
-                      title={ISOLATION_COPY[mode].title}
-                      hint={ISOLATION_COPY[mode].hint}
+                      title={copies[mode].title}
+                      hint={copies[mode].hint}
                       badge={
                         browserIncompatible ? (
                           <span className="badge badge--warning">
-                            浏览器不兼容
+                            {macos ? "macOS 不支持" : "浏览器不兼容"}
                           </span>
                         ) : (
                           capabilityBadge(capability)
@@ -821,7 +850,7 @@ export function EnvironmentEditor({
                 tone="warning"
                 title="该环境当前使用的隔离模式无法启动 Chrome"
               >
-                {BROWSER_INCOMPATIBLE_DETAIL}
+                {browserIncompatibleDetail(platformOs)}
               </InlineAlert>
             )}
             <p className="form-note">
@@ -846,7 +875,8 @@ export function EnvironmentEditor({
                   min={1}
                   max={512}
                   value={form.maxProcesses}
-                  placeholder="不限制"
+                  placeholder={limitsSupported ? "不限制" : "macOS 不支持"}
+                  disabled={!limitsSupported}
                   aria-invalid={
                     visibleError("runtimePolicy.maxProcesses") !== undefined
                   }
@@ -873,7 +903,8 @@ export function EnvironmentEditor({
                   inputMode="numeric"
                   min={16}
                   value={form.memoryMiB}
-                  placeholder="不限制"
+                  placeholder={limitsSupported ? "不限制" : "macOS 不支持"}
+                  disabled={!limitsSupported}
                   aria-invalid={
                     visibleError("runtimePolicy.memoryLimitBytes") !== undefined
                   }
@@ -889,6 +920,16 @@ export function EnvironmentEditor({
                 />
               </div>
             </div>
+            {limitsSupported ? null : (
+              <p className="form-note">
+                <Icon name="info" size={13} />
+                <span>
+                  macOS
+                  没有按进程树聚合的进程/内存上限原语，这两项不会写入环境配置，也不会用
+                  RLIMIT 近似。
+                </span>
+              </p>
+            )}
           </section>
 
           <section className="form-section">
@@ -1085,12 +1126,18 @@ function initialState(
   };
 }
 
-function toDraft(form: FormState): EnvironmentDraft {
+function toDraft(
+  form: FormState,
+  platformOs: string | undefined,
+): EnvironmentDraft {
   const timezone = form.timezone.trim();
   const locale = form.locale.trim();
   const browserPath = form.browserPath.trim();
-  const maxProcesses = optionalInteger(form.maxProcesses);
-  const memoryMiB = optionalInteger(form.memoryMiB);
+  const capsLimits = supportsResourceLimits(platformOs);
+  const maxProcesses = capsLimits
+    ? optionalInteger(form.maxProcesses)
+    : undefined;
+  const memoryMiB = capsLimits ? optionalInteger(form.memoryMiB) : undefined;
   const width = integer(form.width);
   const height = integer(form.height);
   const scale = number(form.scale);

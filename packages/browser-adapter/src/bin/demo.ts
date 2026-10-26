@@ -18,7 +18,7 @@ import {
 /**
  * Non-UI demo of the public adapter API.
  *
- * It boots a real `virealm-runtime` daemon on a dedicated pipe, launches two
+ * It boots a real `virealm-runtime` daemon on a dedicated endpoint, launches two
  * real Chrome environments through it, verifies timezone/locale/viewport and
  * Accept-Language on local controlled pages, then stops both and reports what
  * was cleaned up. Nothing here is mocked, and no external site is contacted.
@@ -91,11 +91,14 @@ function parseArguments(argv: readonly string[]): DemoOptions {
   };
 }
 
+const runtimeFileName =
+  process.platform === "win32" ? "virealm-runtime.exe" : "virealm-runtime";
+
 function printUsage(): void {
   console.log(`Usage: pnpm demo [options]
 
-  --runtime <path>    virealm-runtime.exe (default: VIREALM_RUNTIME_EXECUTABLE,
-                      then target/debug/virealm-runtime.exe)
+  --runtime <path>    ${runtimeFileName} (default: VIREALM_RUNTIME_EXECUTABLE,
+                      then target/debug/${runtimeFileName})
   --chrome <path>     Chrome executable (default: discovered install)
   --data-root <path>  Virealm data root (default: <tmp>/virealm-demo)
   -h, --help          show this text
@@ -106,20 +109,20 @@ function resolveRuntime(explicit: string | undefined): string | undefined {
   const candidates = [
     explicit,
     process.env.VIREALM_RUNTIME_EXECUTABLE,
-    path.resolve(process.cwd(), "target", "debug", "virealm-runtime.exe"),
-    path.resolve(
-      process.cwd(),
-      "..",
-      "..",
-      "target",
-      "debug",
-      "virealm-runtime.exe",
-    ),
+    path.resolve(process.cwd(), "target", "debug", runtimeFileName),
+    path.resolve(process.cwd(), "..", "..", "target", "debug", runtimeFileName),
   ];
   return candidates.find(
     (candidate): candidate is string =>
       candidate !== undefined && existsSync(candidate),
   );
+}
+
+/** Endpoint the demo runtime serves on: a named pipe or Unix socket. */
+function demoEndpoint(): string {
+  return process.platform === "win32"
+    ? `\\\\.\\pipe\\virealm-demo-${String(process.pid)}`
+    : path.join(tmpdir(), `virealm-demo-${String(process.pid)}.sock`);
 }
 
 function configFor(
@@ -207,14 +210,14 @@ async function run(): Promise<number> {
   const runtimeExecutable = resolveRuntime(options.runtime);
   if (runtimeExecutable === undefined) {
     console.error(
-      "No virealm-runtime.exe found. Build it with:\n" +
+      `No ${runtimeFileName} found. Build it with:\n` +
         "  cargo build -p virealm-process-runtime --bin virealm-runtime\n" +
         "then pass --runtime <path> or set VIREALM_RUNTIME_EXECUTABLE.",
     );
     return 2;
   }
 
-  const pipePath = `\\\\.\\pipe\\virealm-demo-${String(process.pid)}`;
+  const pipePath = demoEndpoint();
   const server = createServer((request, response) => {
     const route = request.url ?? "/";
     if (route === "/headers") {
@@ -246,7 +249,7 @@ async function run(): Promise<number> {
 
   console.log("Virealm browser adapter demo");
   console.log(`  runtime   ${runtimeExecutable}`);
-  console.log(`  pipe      ${pipePath}`);
+  console.log(`  endpoint  ${pipePath}`);
   console.log(`  data root ${options.dataRoot}`);
   console.log(`  pages     ${baseUrl}`);
 

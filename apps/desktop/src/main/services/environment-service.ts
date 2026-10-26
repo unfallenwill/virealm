@@ -28,7 +28,7 @@ import {
 } from "../../shared/contracts.js";
 import type { ValidationIssue } from "../../shared/validation.js";
 import {
-  BROWSER_INCOMPATIBLE_REASON,
+  browserIncompatibleReason,
   isBrowserCompatibleIsolation,
 } from "../../shared/isolation.js";
 import { DesktopError } from "../errors.js";
@@ -68,6 +68,8 @@ export interface EnvironmentServiceOptions {
   readonly now?: () => number;
   readonly createId?: () => string;
   readonly verifyTimeoutMs?: number;
+  /** Host platform, injectable so both platform policies are testable. */
+  readonly platform?: string;
 }
 
 interface VerificationCacheEntry {
@@ -97,12 +99,14 @@ export class DesktopEnvironmentService {
   private readonly verifications = new Map<string, VerificationCacheEntry>();
   private readonly operations = new Map<string, Operation>();
   private readonly dataRoot: string;
+  private readonly platform: string;
 
   constructor(private readonly options: EnvironmentServiceOptions) {
     this.now = options.now ?? Date.now;
     this.createId = options.createId ?? defaultId;
     this.verifyTimeoutMs = options.verifyTimeoutMs ?? 10_000;
     this.dataRoot = path.resolve(options.dataRoot);
+    this.platform = options.platform ?? process.platform;
   }
 
   async initialize(): Promise<void> {
@@ -714,7 +718,7 @@ export class DesktopEnvironmentService {
     }
     throw new DesktopError(
       "unsupported_isolation",
-      BROWSER_INCOMPATIBLE_REASON,
+      browserIncompatibleReason(this.platform),
       {
         details: {
           environmentId: record.id,

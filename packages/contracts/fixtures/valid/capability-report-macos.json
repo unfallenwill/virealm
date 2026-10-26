@@ -1,0 +1,52 @@
+{
+  "platform": {
+    "os": "macos",
+    "version": { "major": 27, "minor": 0, "build": 1 },
+    "osVersion": "27.0.1",
+    "architecture": "arm64",
+    "elevated": false,
+    "integrityLevel": "unknown"
+  },
+  "jobObject": {
+    "state": "unsupported",
+    "detail": "Job Objects are a Windows primitive"
+  },
+  "appContainer": {
+    "state": "unsupported",
+    "detail": "AppContainer is a Windows primitive"
+  },
+  "appContainerAcl": {
+    "state": "unsupported",
+    "detail": "AppContainer is a Windows primitive"
+  },
+  "restrictedToken": {
+    "state": "unsupported",
+    "detail": "restricted tokens are a Windows primitive"
+  },
+  "processMitigation": {
+    "state": "unsupported",
+    "detail": "process mitigation policies are a Windows primitive"
+  },
+  "etw": {
+    "state": "unsupported",
+    "detail": "ETW is a Windows facility"
+  },
+  "processGroup": {
+    "state": "supported",
+    "detail": "created a child in its own process group and verified getpgid"
+  },
+  "resourceLimits": {
+    "maxProcesses": {
+      "state": "unavailable",
+      "detail": "macOS has no per-tree process limit"
+    },
+    "memoryLimit": {
+      "state": "unavailable",
+      "detail": "macOS has no per-tree memory limit"
+    }
+  },
+  "notes": [
+    "macOS managed isolation is process-group lifecycle containment, not a sandbox",
+    "no file or network confinement is claimed on macOS"
+  ]
+}

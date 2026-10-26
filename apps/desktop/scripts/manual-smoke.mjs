@@ -27,7 +27,9 @@ const app = await electron.launch({
         "..",
         "target",
         "debug",
-        "virealm-runtime.exe",
+        process.platform === "win32"
+          ? "virealm-runtime.exe"
+          : "virealm-runtime",
       ),
   },
   timeout: 30_000,

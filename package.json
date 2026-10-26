@@ -2,7 +2,7 @@
   "name": "virealm",
   "version": "0.1.0",
   "private": true,
-  "description": "Isolated browser environments for Windows.",
+  "description": "Isolated browser environments for Windows and macOS.",
   "engines": {
     "node": ">=20"
   },

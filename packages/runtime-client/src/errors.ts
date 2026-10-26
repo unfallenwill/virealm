@@ -24,7 +24,7 @@ export class RuntimeClientError extends Error {
   }
 }
 
-/** The runtime service is not listening, or the pipe cannot be opened. */
+/** The runtime service is not listening, or its endpoint cannot be reached. */
 export class RuntimeUnavailableError extends RuntimeClientError {
   readonly pipePath: string;
 
@@ -39,7 +39,7 @@ export class RuntimeUnavailableError extends RuntimeClientError {
   }
 }
 
-/** The pipe existed but connecting took longer than the configured budget. */
+/** The endpoint exists but connecting took longer than the configured budget. */
 export class RuntimeConnectionTimeoutError extends RuntimeClientError {
   constructor(pipePath: string, timeoutMs: number) {
     super(
@@ -66,7 +66,7 @@ export class RuntimeRequestTimeoutError extends RuntimeClientError {
   }
 }
 
-/** The pipe closed while requests were outstanding. */
+/** The runtime endpoint closed while requests were outstanding. */
 export class RuntimeDisconnectedError extends RuntimeClientError {
   constructor(message = "the runtime connection closed unexpectedly") {
     super("connection_closed", message);

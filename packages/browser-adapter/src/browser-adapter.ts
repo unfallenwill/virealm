@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+
 import { discoverBrowsers } from "./chrome/discovery.js";
 import type {
   BrowserConnectorPort,
@@ -40,7 +42,15 @@ export interface BrowserAdapterOptions {
   readonly stateStore?: RuntimeStateStorePort;
   /** Extra Chrome executables, for example Chrome for Testing. */
   readonly chromeSearchPaths?: readonly string[];
+  /** Windows: usually `%LOCALAPPDATA%`. */
   readonly localAppData?: string;
+  /** macOS: home directory whose Chrome profile roots must be refused. */
+  readonly homeDirectory?: string;
+  /**
+   * Install layout and path semantics to use. Defaults to the host platform;
+   * tests use it to exercise the other platform's layout.
+   */
+  readonly platform?: string;
   readonly timeouts?: Partial<EnvironmentTimeouts>;
   readonly networkProbeUrl?: string;
   readonly now?: () => number;
@@ -73,6 +83,7 @@ export class BrowserAdapter {
       throw new Error("browser adapter runtime wiring is inconsistent");
     }
 
+    const platform = options.platform ?? process.platform;
     const discovery: ChromeDiscoveryPort =
       options.discovery ??
       ({
@@ -82,6 +93,7 @@ export class BrowserAdapter {
             ...(options.chromeSearchPaths === undefined
               ? {}
               : { extraPaths: options.chromeSearchPaths }),
+            platform,
           }),
       } satisfies ChromeDiscoveryPort);
 
@@ -99,6 +111,8 @@ export class BrowserAdapter {
           ? {}
           : { localAppData: process.env.LOCALAPPDATA }
         : { localAppData: options.localAppData }),
+      homeDirectory: options.homeDirectory ?? homedir(),
+      platform,
       ...(options.now === undefined ? {} : { now: options.now }),
       ...(options.timeouts === undefined ? {} : { timeouts: options.timeouts }),
       ...(options.networkProbeUrl === undefined

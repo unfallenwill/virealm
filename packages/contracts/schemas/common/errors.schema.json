@@ -28,13 +28,19 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
-          "description": "Windows API that failed, when the failure came from a platform call."
+          "description": "Platform API that failed, when the failure came from a platform call."
         },
         "windowsError": {
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295,
           "description": "Raw Win32 error code. Diagnostic only; do not parse the number to decide behaviour."
+        },
+        "errno": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "description": "Raw POSIX errno. Diagnostic only; mutually exclusive with windowsError."
         },
         "method": {
           "type": "string",

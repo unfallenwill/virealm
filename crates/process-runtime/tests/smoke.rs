@@ -1,7 +1,8 @@
 //! Public-API tests that do not start a process.
 //!
 //! These cover request validation, policy rejection and the four-state
-//! capability contract. Launch behaviour lives in `windows_launch.rs`.
+//! capability contract. Platform-specific launch behaviour lives in
+//! `windows_launch.rs` and `macos_launch.rs`.
 
 mod common;
 
@@ -34,7 +35,7 @@ fn valid_spec() -> (TestDir, LaunchSpec) {
 #[test]
 fn wire_and_contract_versions_are_published() {
     assert_eq!(PROTOCOL_VERSION, 2);
-    assert_eq!(CONTRACT_VERSION, "0.2.0");
+    assert_eq!(CONTRACT_VERSION, "0.3.0");
 }
 
 #[test]
@@ -58,13 +59,31 @@ fn capability_probe_reports_only_verified_states() {
         ));
     }
 
-    assert!(
-        report.job_object.is_supported(),
-        "Job Objects are required on Windows 10/11: {:?}",
-        report.job_object
-    );
-    assert_eq!(report.platform.os, "windows");
-    assert!(report.platform.version.major >= 10);
+    #[cfg(windows)]
+    {
+        assert!(
+            report.job_object.is_supported(),
+            "Job Objects are required on Windows 10/11: {:?}",
+            report.job_object
+        );
+        assert_eq!(report.platform.os, "windows");
+        assert!(report.platform.version.major >= 10);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        assert_eq!(report.platform.os, "macos");
+        assert!(
+            report
+                .process_group
+                .as_ref()
+                .is_some_and(|capability| capability.is_supported()),
+            "process groups are required for managed isolation: {:?}",
+            report.process_group
+        );
+        assert!(!report.job_object.is_supported());
+        assert!(report.platform.os_version.is_some());
+    }
+    assert!(!report.platform.architecture.is_empty());
 
     let value = serde_json::to_value(&report).expect("report serializes");
     for key in [

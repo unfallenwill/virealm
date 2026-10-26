@@ -1,4 +1,4 @@
-//! Shared helpers for Windows integration tests.
+//! Shared helpers for process-runtime integration tests.
 
 #![allow(dead_code)]
 
@@ -57,11 +57,26 @@ pub fn child_executable() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_virealm-test-child"))
 }
 
+/// File name of the test child on this platform.
+pub fn child_file_name() -> &'static str {
+    if cfg!(windows) {
+        "virealm-test-child.exe"
+    } else {
+        "virealm-test-child"
+    }
+}
+
 /// Copy the test child into `directory` and return the copied path.
 pub fn install_child(directory: &Path) -> PathBuf {
     std::fs::create_dir_all(directory).expect("create program directory");
-    let target = directory.join("virealm-test-child.exe");
+    let target = directory.join(child_file_name());
     std::fs::copy(child_executable(), &target).expect("copy test child");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755))
+            .expect("make test child executable");
+    }
     std::fs::canonicalize(target).expect("canonicalize test child")
 }
 
@@ -136,8 +151,9 @@ pub fn wait_until(timeout: Duration, mut condition: impl FnMut() -> bool) -> boo
 
 /// Whether a process with this PID is still running.
 ///
-/// Uses `PROCESS_QUERY_LIMITED_INFORMATION`, which is enough to read the exit
-/// code and works across integrity levels for the same user.
+/// On Windows this uses `PROCESS_QUERY_LIMITED_INFORMATION`, which is enough to
+/// read the exit code and works across integrity levels for the same user.
+#[cfg(windows)]
 pub fn process_is_running(pid: u32) -> bool {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
@@ -158,6 +174,27 @@ pub fn process_is_running(pid: u32) -> bool {
     unsafe { CloseHandle(handle) };
 
     ok != 0 && exit_code == 259 // STILL_ACTIVE
+}
+
+/// Whether a process with this PID is still running.
+///
+/// Asks `proc_pidinfo` rather than `kill(pid, 0)`: a zombie is not running, but
+/// `kill(pid, 0)` still succeeds for one.
+#[cfg(target_os = "macos")]
+pub fn process_is_running(pid: u32) -> bool {
+    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+    // SAFETY: `info` is correctly sized for PROC_PIDTBSDINFO.
+    let written = unsafe {
+        libc::proc_pidinfo(
+            pid as libc::c_int,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            (&mut info as *mut libc::proc_bsdinfo).cast(),
+            size,
+        )
+    };
+    written == size
 }
 
 pub fn json_string_array(value: &serde_json::Value, key: &str) -> Vec<String> {

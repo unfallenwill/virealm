@@ -1,12 +1,9 @@
-import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import type {
   CapabilityReport,
@@ -28,23 +25,29 @@ import type {
 } from "../../src/domain/status.js";
 import type { RuntimePort } from "../../src/application/ports.js";
 import { ProcessRuntimeClient } from "../../src/runtime/process-runtime-client.js";
-
-const execFileAsync = promisify(execFile);
+import {
+  chromeCommandLinesForProfile,
+  runtimeEndpoint,
+  runtimeExecutableName,
+  SUPPORTED_PLATFORM,
+} from "./platform.js";
 
 const runtimeExecutable =
   process.env.VIREALM_RUNTIME_EXECUTABLE ??
   fileURLToPath(
-    new URL("../../../../target/debug/virealm-runtime.exe", import.meta.url),
+    new URL(
+      `../../../../target/debug/${runtimeExecutableName()}`,
+      import.meta.url,
+    ),
   );
 
 const discovered = discoverBrowsers();
 const chrome = discovered[0];
 const available =
-  process.platform === "win32" &&
-  existsSync(runtimeExecutable) &&
-  chrome !== undefined;
+  SUPPORTED_PLATFORM && existsSync(runtimeExecutable) && chrome !== undefined;
+const requireIntegration = process.env.VIREALM_REQUIRE_INTEGRATION === "1";
 
-if (!available) {
+if (!available && !requireIntegration) {
   console.warn(
     "[browser-adapter integration] prerequisites missing; real Chrome tests are skipped:",
     {
@@ -56,19 +59,19 @@ if (!available) {
   );
 }
 
-describe("integration prerequisites", () => {
+describe.skipIf(!requireIntegration)("integration prerequisites", () => {
   it("has a built runtime and a local Chrome", () => {
     expect(
-      process.platform,
-      "these tests exercise Windows Job Objects and named pipes",
-    ).toBe("win32");
+      SUPPORTED_PLATFORM,
+      "these tests exercise Windows Job Objects and macOS process groups",
+    ).toBe(true);
     expect(
       existsSync(runtimeExecutable),
       `build the runtime first: cargo build -p virealm-process-runtime --bin virealm-runtime (missing ${runtimeExecutable})`,
     ).toBe(true);
     expect(
       discovered.length,
-      "Chrome was not found in a standard Windows install location",
+      `Chrome was not found in a standard install location for ${process.platform}`,
     ).toBeGreaterThan(0);
   });
 });
@@ -227,26 +230,8 @@ async function withPage<T>(
   }
 }
 
-async function chromeCommandLines(): Promise<string[]> {
-  const script =
-    "$items = @(Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Select-Object -ExpandProperty CommandLine); ConvertTo-Json -Compress -InputObject $items";
-  const { stdout } = await execFileAsync(
-    "powershell.exe",
-    ["-NoProfile", "-NonInteractive", "-Command", script],
-    { maxBuffer: 8 * 1024 * 1024, windowsHide: true },
-  );
-  const parsed: unknown = JSON.parse(stdout.trim() || "[]");
-  if (typeof parsed === "string") {
-    return [parsed];
-  }
-  return Array.isArray(parsed)
-    ? parsed.filter((entry): entry is string => typeof entry === "string")
-    : [];
-}
-
 async function linesForProfile(userDataDir: string): Promise<string[]> {
-  const all = await chromeCommandLines();
-  return all.filter((line) => line.includes(userDataDir));
+  return chromeCommandLinesForProfile(userDataDir);
 }
 
 async function endpointAnswers(endpoint: string): Promise<boolean> {
@@ -281,7 +266,7 @@ describe.skipIf(!available)(
   () => {
     beforeAll(async () => {
       const root = mkdtempSync(path.join(tmpdir(), "virealm-it-"));
-      const pipePath = `\\\\.\\pipe\\virealm-it-${randomUUID()}`;
+      const pipePath = runtimeEndpoint(root);
       const host = await RuntimeHost.start({
         executablePath: runtimeExecutable,
         pipePath,
@@ -384,8 +369,12 @@ describe.skipIf(!available)(
 
     it("discovers the installed Chrome with a real version", () => {
       const h = platform();
-      expect(chrome?.executablePath).toMatch(/chrome\.exe$/i);
-      expect(chrome?.version).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
+      expect(chrome?.executablePath).toMatch(
+        process.platform === "win32"
+          ? /chrome\.exe$/i
+          : /\.app\/Contents\/MacOS\/[^/]+$/,
+      );
+      expect(chrome?.version).toMatch(/^\d+(?:\.\d+){1,3}$/);
       expect(
         h.adapter
           .discoverBrowsers(chromeOf())

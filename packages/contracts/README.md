@@ -5,6 +5,8 @@ Virealm Process Runtime 与 TypeScript 调用方之间的**数据协议包**：J
 负责在执行任何操作前拒绝不合法的消息。
 
 当前线协议版本为 `2`，与 `crates/process-runtime` 中的 `PROTOCOL_VERSION` 一致。
+`CONTRACT_VERSION` 为 `0.3.0`：macOS 支持以**可选字段**增量加入，因此协议版本
+不提升，Windows 的线上 JSON 形状不变。
 
 ## 1. 职责与非职责
 
@@ -18,8 +20,10 @@ Virealm Process Runtime 与 TypeScript 调用方之间的**数据协议包**：J
 
 本包**不**负责，也不应包含：
 
-- Named Pipe、WebSocket、HTTP 或 Electron IPC 的建立与生命周期。
-- Chrome/CDP 启动、进程创建、Job Object、AppContainer、Windows API 调用。
+- Windows 命名管道、Unix domain socket、WebSocket、HTTP 或 Electron IPC 的建立
+  与生命周期。
+- Chrome/CDP 启动、进程创建、Job Object、AppContainer、POSIX 进程组与平台 API
+  调用。
 - 权限模型、隔离策略的最终裁决；这些属于 `crates/process-runtime`。
 - 重试、超时、重连等传输层行为。
 
@@ -197,7 +201,7 @@ const request: Request = {
   method: "runtime.getCapabilities",
 };
 
-// Desktop: 通过自己的 Named Pipe / IPC 发送 JSON
+// Desktop: 通过自己的本地端点（命名管道 / Unix socket）或 IPC 发送 JSON
 // Browser Adapter: 通过宿主提供的桥接发送 JSON
 const payload = JSON.stringify(request);
 const reply: unknown = await transport.roundTrip(payload);
@@ -226,7 +230,8 @@ if (!parsed.ok) {
 | `startedAtUnixMs` | 由创建时间换算 | 必须与创建时间精确一致 |
 | `applied` | `AppliedIsolation` | 从进程/作业回读的证据，不是请求副本 |
 | `code` | `ErrorCode` | 六个运行时错误码 + 三个协议错误码 |
-| `details.operation/windowsError` | `ErrorInfo.operation/windowsError` | 仅 `platform_failure` 允许 |
+| `details.operation` | `ErrorInfo.operation` | 仅 `platform_failure`，必填 |
+| `details.windowsError` / `details.errno` | `ErrorInfo.windows_error` / `ErrorInfo.errno` | 仅 `platform_failure`，两者恰好出现一个（Windows 用前者，macOS 用后者） |
 
 完整字段与消息样例见 [docs/protocol.md](../../docs/protocol.md)，组件边界见
 [docs/component-contracts.md](../../docs/component-contracts.md)。

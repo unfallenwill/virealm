@@ -9,7 +9,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Result, RuntimeError};
-use crate::platform::windows::path as windows_path;
+use crate::platform;
 use crate::policy::{AccessLevel, FileAccessPolicy, SecurityPolicy};
 use crate::process::ManagedProcess;
 
@@ -42,6 +42,9 @@ pub(crate) struct PreparedLaunchSpec {
     pub arguments: Vec<OsString>,
     pub working_directory: Option<PathBuf>,
     pub environment_overrides: BTreeMap<OsString, OsString>,
+    /// Used by the Windows backend; macOS derives containment from the process
+    /// group and does not read it.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub data_directory: PathBuf,
     pub policy: SecurityPolicy,
 }
@@ -58,13 +61,13 @@ pub fn validate_launch_spec(spec: &LaunchSpec) -> Result<()> {
 /// handles. Dropping it terminates the remaining process tree.
 pub fn launch(spec: &LaunchSpec) -> Result<ManagedProcess> {
     let prepared = prepare(spec)?;
-    crate::platform::windows::process::launch(&prepared)
+    platform::launch(&prepared)
 }
 
 fn prepare(spec: &LaunchSpec) -> Result<PreparedLaunchSpec> {
     validate_environment_id(&spec.environment_id)?;
-    validate_arguments(&spec.arguments)?;
-    validate_environment(&spec.environment_overrides)?;
+    platform::validate_arguments(&spec.arguments)?;
+    platform::validate_environment(&spec.environment_overrides)?;
 
     let executable = canonical_existing(&spec.executable, "executable")?;
     if !executable.is_file() {
@@ -94,7 +97,7 @@ fn prepare(spec: &LaunchSpec) -> Result<PreparedLaunchSpec> {
 
     if !program_roots
         .iter()
-        .any(|root| windows_path::is_within(&executable, root))
+        .any(|root| platform::is_within(&executable, root))
     {
         return Err(RuntimeError::PolicyViolation(format!(
             "executable {} is outside the allowed program roots",
@@ -109,7 +112,7 @@ fn prepare(spec: &LaunchSpec) -> Result<PreparedLaunchSpec> {
             data_directory.display()
         )));
     }
-    windows_path::reject_overbroad_root(&data_directory, "data directory")?;
+    platform::reject_overbroad_root(&data_directory, "data directory")?;
 
     let working_directory = match &spec.working_directory {
         Some(path) => {
@@ -142,7 +145,7 @@ fn prepare(spec: &LaunchSpec) -> Result<PreparedLaunchSpec> {
                     path.display()
                 )));
             }
-            windows_path::reject_overbroad_root(&path, "additional access root")?;
+            platform::reject_overbroad_root(&path, "additional access root")?;
             if path == data_directory {
                 return Err(RuntimeError::PolicyViolation(
                     "data directory must not be duplicated in additional_roots".into(),
@@ -164,6 +167,8 @@ fn prepare(spec: &LaunchSpec) -> Result<PreparedLaunchSpec> {
     }
 
     policy.validate()?;
+    platform::validate_isolation_supported(policy.isolation)?;
+    platform::validate_containment(&policy.containment)?;
 
     Ok(PreparedLaunchSpec {
         environment_id: spec.environment_id.clone(),
@@ -191,56 +196,6 @@ fn validate_environment_id(environment_id: &str) -> Result<()> {
         return Err(RuntimeError::InvalidRequest(
             "environment_id must not contain control characters".into(),
         ));
-    }
-    Ok(())
-}
-
-fn validate_arguments(arguments: &[OsString]) -> Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-
-    if arguments
-        .iter()
-        .any(|argument| argument.encode_wide().any(|unit| unit == 0))
-    {
-        return Err(RuntimeError::InvalidRequest(
-            "arguments must not contain NUL characters".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_environment(environment: &BTreeMap<OsString, OsString>) -> Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-
-    let mut seen: Vec<&OsString> = Vec::with_capacity(environment.len());
-    for (key, value) in environment {
-        let wide: Vec<u16> = key.encode_wide().collect();
-        if wide.is_empty() {
-            return Err(RuntimeError::InvalidRequest(
-                "environment variable name must not be empty".into(),
-            ));
-        }
-        if wide.first() == Some(&(b'=' as u16)) || wide.contains(&(b'=' as u16)) {
-            return Err(RuntimeError::InvalidRequest(
-                "environment variable name must not contain '='".into(),
-            ));
-        }
-        if wide.contains(&0) || value.encode_wide().any(|unit| unit == 0) {
-            return Err(RuntimeError::InvalidRequest(
-                "environment variables must not contain NUL characters".into(),
-            ));
-        }
-
-        if let Some(previous) = seen
-            .iter()
-            .find(|previous| crate::process::os_string_is_ascii_case_insensitive(previous, key))
-        {
-            return Err(RuntimeError::InvalidRequest(format!(
-                "duplicate environment variable (case-insensitive): {:?} and {:?}",
-                previous, key
-            )));
-        }
-        seen.push(key);
     }
     Ok(())
 }
@@ -410,10 +365,22 @@ mod tests {
         ));
     }
 
+    #[cfg(windows)]
     #[test]
     fn volume_root_as_data_directory_is_rejected() {
         let mut spec = spec_for(std::env::current_exe().expect("current exe"));
         spec.data_directory = PathBuf::from(r"C:\");
+        assert!(matches!(
+            validate_launch_spec(&spec),
+            Err(RuntimeError::PolicyViolation(_))
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn filesystem_root_as_data_directory_is_rejected() {
+        let mut spec = spec_for(std::env::current_exe().expect("current exe"));
+        spec.data_directory = PathBuf::from("/");
         assert!(matches!(
             validate_launch_spec(&spec),
             Err(RuntimeError::PolicyViolation(_))
@@ -523,10 +490,24 @@ mod tests {
         ));
     }
 
+    #[cfg(windows)]
     #[test]
     fn app_container_rejects_overbroad_additional_root() {
         let spec = app_container_spec(vec![AccessRoot {
             path: PathBuf::from(r"C:\"),
+            access: AccessLevel::ReadWrite,
+        }]);
+        assert!(matches!(
+            validate_launch_spec(&spec),
+            Err(RuntimeError::PolicyViolation(_))
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn app_container_rejects_overbroad_additional_root() {
+        let spec = app_container_spec(vec![AccessRoot {
+            path: PathBuf::from("/Users"),
             access: AccessLevel::ReadWrite,
         }]);
         assert!(matches!(

@@ -4,17 +4,20 @@ import { connect } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { RuntimeHostStartError } from "./errors.js";
-import { DEFAULT_RUNTIME_PIPE_PATH } from "./client.js";
+import { defaultRuntimeAddress } from "./client.js";
 
 const STDERR_TAIL_BYTES = 8 * 1024;
 const RETRY_DELAY_MS = 100;
 
 export interface RuntimeHostOptions {
-  /** Absolute path to `virealm-runtime.exe`. */
+  /** Absolute path to the `virealm-runtime` executable. */
   readonly executablePath: string;
-  /** Pipe the child should serve on. Defaults to the standard pipe. */
+  /**
+   * Runtime endpoint the child should serve on: a Windows named pipe or a Unix
+   * domain socket. Defaults to `defaultRuntimeAddress()`.
+   */
   readonly pipePath?: string;
-  /** How long to wait for the pipe to accept connections. */
+  /** How long to wait for the endpoint to accept connections. */
   readonly startupTimeoutMs?: number;
 }
 
@@ -53,10 +56,11 @@ export class RuntimeHost {
       );
     }
 
-    const pipePath = options.pipePath ?? DEFAULT_RUNTIME_PIPE_PATH;
+    const pipePath = options.pipePath ?? defaultRuntimeAddress();
     const child = spawn(options.executablePath, ["serve", "--pipe", pipePath], {
       stdio: ["ignore", "ignore", "pipe"],
-      windowsHide: true,
+      // `windowsHide` is a Windows-only spawn option.
+      ...(process.platform === "win32" ? { windowsHide: true } : {}),
     });
 
     const host = new RuntimeHost(child, pipePath);

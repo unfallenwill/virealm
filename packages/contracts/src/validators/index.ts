@@ -192,7 +192,7 @@ function checkRequest(request: Request): readonly ValidationIssue[] {
       issues.push(
         semanticIssue(
           "/params/environmentOverrides",
-          `environment variable names are case-insensitive on Windows: "${previous}" and "${name}" collide`,
+          `environment variable names are case-insensitive: "${previous}" and "${name}" collide`,
         ),
       );
     }
@@ -242,6 +242,9 @@ function checkDetailPresence(
     );
   }
 
+  const hasWindowsError = details?.windowsError !== undefined;
+  const hasErrno = details?.errno !== undefined;
+
   if (error.code === "platform_failure") {
     if (details?.operation === undefined) {
       issues.push(
@@ -251,22 +254,26 @@ function checkDetailPresence(
         ),
       );
     }
-    if (details?.windowsError === undefined) {
+    if (!hasWindowsError && !hasErrno) {
       issues.push(
         semanticIssue(
           "/details/windowsError",
-          "platform_failure must report the Win32 error code",
+          "platform_failure must report exactly one of windowsError or errno",
+        ),
+      );
+    } else if (hasWindowsError && hasErrno) {
+      issues.push(
+        semanticIssue(
+          "/details",
+          "platform_failure must report exactly one of windowsError or errno",
         ),
       );
     }
-  } else if (
-    details?.operation !== undefined ||
-    details?.windowsError !== undefined
-  ) {
+  } else if (details?.operation !== undefined || hasWindowsError || hasErrno) {
     issues.push(
       semanticIssue(
         "/details",
-        "operation and windowsError are only valid for platform_failure",
+        "operation, windowsError and errno are only valid for platform_failure",
       ),
     );
   }

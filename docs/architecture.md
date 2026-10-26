@@ -14,7 +14,7 @@ Virealm 为每个「环境」提供一套隔离的浏览上下文：独立的浏
 | --- | --- | --- | --- |
 | `apps/desktop` | TypeScript / React | 环境管理 UI、配置编辑、状态与诊断展示 | 直接访问操作系统 API、直接执行命令、自行启动浏览器 |
 | `packages/browser-adapter` | TypeScript | 定位 Chrome、构造启动参数、独立 `user-data-dir`、CDP 连接、浏览器配置与验证 | 决定进程隔离策略、绕过运行时直接创建进程 |
-| `crates/process-runtime` | Rust | 能力探测、进程启动、Job Object、AppContainer / 受限令牌、结构化诊断 | 任何 Chrome / CDP / 时区 / 语言知识 |
+| `crates/process-runtime` | Rust | 能力探测、进程启动、Job Object、AppContainer / 受限令牌（Windows）、POSIX 进程组（macOS）、结构化诊断 | 任何 Chrome / CDP / 时区 / 语言知识 |
 | `packages/contracts` | TypeScript + JSON Schema | 请求/响应/事件信封、启动参数、能力报告、进程状态与错误、协议版本、运行时校验器 | 传输实现、进程创建、隔离策略与任何一方的业务逻辑 |
 
 ## 3. 依赖方向
@@ -56,8 +56,10 @@ electron main / environment-service
 5. Process Runtime：
    - 校验请求与策略，包括可执行文件是否位于允许的程序目录；
    - 对照策略所需能力，确认系统能够满足；
-   - 创建 Job Object，按模式创建受限令牌或 AppContainer 属性；
-   - 以挂起状态创建进程，加入 Job、读取子进程令牌回验隔离，然后恢复执行；
+   - Windows：创建 Job Object，按模式创建受限令牌或 AppContainer 属性；以挂起
+     状态创建进程，加入 Job、读取子进程令牌回验隔离，然后恢复执行；
+   - macOS：只接受 `managed`；创建进程时直接放入独立 POSIX 进程组，再用
+     `getpgid` 与 `proc_pidinfo` 回验进程组与启动时间，不声称文件/网络隔离；
    - 任一验证失败则终止进程、释放句柄并返回结构化错误。
 6. Browser Adapter 通过受控 CDP 连接设置并**验证**时区、语言等配置。
 7. Environment Service 汇总结果。任一步失败都必须回收已创建的资源，再向 UI
@@ -86,22 +88,28 @@ src/
 ├── policy/           平台无关策略与校验
 ├── process/          进程身份、状态、终止与句柄所有权
 ├── platform/
-│   └── windows/      Job Object / AppContainer / Token / ACL / 进程创建
+│   ├── windows/      Job Object / AppContainer / Token / ACL / 进程创建 / 命名管道
+│   └── macos/        POSIX 进程组 / proc_pidinfo / Unix socket
 └── error.rs          稳定错误分类
 ```
 
-`platform/windows` 是模块而不是独立 crate。当前只有一个目标平台，Windows 原生
-实现是组件内部细节；提前拆成 `process-runtime-windows` 只会增加依赖管理成本。
-等 Linux 后端真实出现、且平台无关契约稳定后，再评估拆分为 core / windows /
-linux 三个 crate。
+`platform/windows` 与 `platform/macos` 是模块而不是独立 crate：平台门面
+（`platform/mod.rs`）暴露同一组函数，上层不出现 `cfg` 分支。提前拆成
+`process-runtime-windows` / `process-runtime-macos` 只会增加依赖管理成本；等平台
+无关契约稳定、Linux 后端真实出现后，再评估拆分。
 
-两种隔离模式的实际边界必须写清楚：
+隔离模式的实际边界必须写清楚：
 
-- `managed`：普通进程 + Job Object，只约束生命周期与资源，**不是**沙箱。
+- `managed`：Windows 为普通进程 + Job Object，macOS 为独立 POSIX 进程组；两者都
+  只约束生命周期与资源，**不是**沙箱。
 - `restricted`：受限令牌 + Low 完整性，降低写入中完整性位置的能力，但不按路径
-  限制文件，也不限制网络。
+  限制文件，也不限制网络。Windows 专属。
 - `app_container`：唯一能够宣称文件/网络隔离的模式，通过 AppContainer 令牌与
-  显式 ACL 实现。
+  显式 ACL 实现。Windows 专属。
+- macOS 没有 `restricted` / `app_container` 的等价物；运行时会以
+  `capability_unavailable` 拒绝，而不是用 `sandbox-exec` 或 RLIMIT 近似。
+- macOS 也没有按进程树聚合的进程数/内存上限；带 `maxProcesses` 或
+  `memoryLimitBytes` 的请求会被拒绝，桌面界面禁用这两个字段。
 
 ## 6. 部署形态
 
@@ -109,14 +117,18 @@ Process Runtime 与桌面宿主之间有两种候选形态：
 
 | 形态 | 优点 | 成本 |
 | --- | --- | --- |
-| 独立服务进程 + 受保护的 Windows Named Pipe | 明确的安全边界；运行时崩溃不影响 UI；便于单独升级与审计 | 需要设计管道 ACL、协议版本协商、生命周期与重连 |
+| 独立服务进程 + 本地端点（Windows 命名管道 / macOS Unix socket） | 明确的安全边界；运行时崩溃不影响 UI；便于单独升级与审计 | 需要设计端点访问控制、协议版本协商、生命周期与重连 |
 | 作为原生库集成进桌面应用 | 部署简单、调用直接 | 安全边界与 UI 进程重合；崩溃影响面更大 |
 
-**当前实现采用第一种形态**：`virealm-runtime serve --pipe <pipe>` 以独立进程
-提供协议 2 的 NDJSON 接口，`packages/runtime-client` 的 `RuntimeHost` 负责启动与
-守护，`RuntimeClient` 负责连接与请求。桌面端的 `RuntimeController` 拥有这条
-管道：它负责启动守护进程、能力探测与失败后的重启。
+**当前实现采用第一种形态**：`virealm-runtime serve --pipe <address>` 以独立进程
+提供协议 2 的 NDJSON 接口；参数名沿用 `--pipe`，地址在 Windows 上是命名管道
+（`\\.\pipe\virealm-runtime-v2`），在 macOS 上是 Unix domain socket
+（默认 `$TMPDIR/virealm-runtime-v2.sock`，权限 0600，连接时校验同 UID）。
+`packages/runtime-client` 的 `RuntimeHost` 负责启动与守护，`RuntimeClient` 负责
+连接与请求。桌面端的 `RuntimeController` 拥有这条端点：它负责启动守护进程、
+能力探测、失败后的重启，并在正常退出时删除自己生成的 socket。
 
-仍然没有解决的部分：命名管道 ACL 与调用方身份校验、重连与协议升级协商、
-守护进程崩溃后的自动拉起策略。这些只影响运行时进程的生命周期管理，不影响
-`process-runtime` 的内部模块划分。
+仍然没有解决的部分：Windows 命名管道 ACL 与调用方身份校验、重连与协议升级
+协商、守护进程崩溃后的自动拉起策略。macOS socket 使用 `LOCAL_PEERCRED` 校验
+调用方 UID，并在持有 `flock` 锁时清理陈旧 socket；正常退出不由守护进程删除
+socket（避免与新实例竞争），由桌面控制器或下次启动持锁清理。

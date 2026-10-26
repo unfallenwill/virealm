@@ -24,10 +24,11 @@
         }
       }
     },
-    "WindowsVersion": {
+    "PlatformVersion": {
       "type": "object",
       "additionalProperties": false,
       "required": ["major", "minor", "build"],
+      "description": "Windows reports major/minor/build. macOS reports major/minor/patch from kern.osproductversion, with the patch component carried in build; osVersion carries the exact product string.",
       "properties": {
         "major": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
         "minor": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
@@ -63,7 +64,13 @@
           "maxLength": 32
         },
         "version": {
-          "$ref": "#/$defs/WindowsVersion"
+          "$ref": "#/$defs/PlatformVersion"
+        },
+        "osVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Exact product version string, e.g. macOS \"27.0.1\". Omitted on Windows."
         },
         "architecture": {
           "type": "string",
@@ -79,6 +86,15 @@
         }
       }
     },
+    "ResourceLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxProcesses", "memoryLimit"],
+      "properties": {
+        "maxProcesses": { "$ref": "#/$defs/Capability" },
+        "memoryLimit": { "$ref": "#/$defs/Capability" }
+      }
+    },
     "CapabilityReport": {
       "type": "object",
       "additionalProperties": false,
@@ -91,6 +107,7 @@
         "processMitigation",
         "etw"
       ],
+      "description": "The six Windows keys stay required for every platform so a v2 consumer can read any report. On macOS they report unsupported, while processGroup, unixSocket and resourceLimits describe what the host actually provides.",
       "properties": {
         "platform": { "$ref": "#/$defs/PlatformInfo" },
         "jobObject": { "$ref": "#/$defs/Capability" },
@@ -99,6 +116,22 @@
         "restrictedToken": { "$ref": "#/$defs/Capability" },
         "processMitigation": { "$ref": "#/$defs/Capability" },
         "etw": { "$ref": "#/$defs/Capability" },
+        "processGroup": {
+          "$ref": "#/$defs/Capability",
+          "description": "POSIX process-group containment. Omitted on Windows."
+        },
+        "unixSocket": {
+          "$ref": "#/$defs/Capability",
+          "description": "Unix domain socket transport with peer credential checks. Omitted on Windows."
+        },
+        "processIdentity": {
+          "$ref": "#/$defs/Capability",
+          "description": "Process identity derived from the kernel start time. Omitted on Windows."
+        },
+        "resourceLimits": {
+          "$ref": "#/$defs/ResourceLimits",
+          "description": "Per-tree process and memory limits. Omitted on Windows, where Job Object limits cover them."
+        },
         "notes": {
           "type": "array",
           "maxItems": 16,

@@ -21,7 +21,10 @@ const app = await electron.launch({
   env: {
     ...process.env,
     VIREALM_USER_DATA_DIR: userData,
-    VIREALM_RUNTIME_PATH: path.join(userData, "missing-runtime.exe"),
+    VIREALM_RUNTIME_PATH: path.join(
+      userData,
+      process.platform === "win32" ? "missing-runtime.exe" : "missing-runtime",
+    ),
   },
   timeout: 30_000,
 });

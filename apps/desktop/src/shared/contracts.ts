@@ -163,6 +163,7 @@ export interface RuntimeStatusView {
         readonly os: string;
         readonly architecture: string;
         readonly elevated: boolean;
+        readonly osVersion?: string;
       }
     | undefined;
   readonly isolation: readonly IsolationCapabilityView[];

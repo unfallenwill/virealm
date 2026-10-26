@@ -37,8 +37,9 @@ async function createProfile(id = "env-clean"): Promise<string> {
 
 describe("expectedProfileDir", () => {
   it("uses the adapter's managed layout", () => {
-    expect(expectedProfileDir("C:\\root", "env-1")).toBe(
-      path.join("C:\\root", "environments", "env-1", "chrome-data"),
+    const dataRoot = path.resolve("virealm-root");
+    expect(expectedProfileDir(dataRoot, "env-1")).toBe(
+      path.join(dataRoot, "environments", "env-1", "chrome-data"),
     );
   });
 });

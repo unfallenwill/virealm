@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
@@ -44,6 +46,8 @@ export class RuntimeController {
   readonly pipePath: string;
   readonly client: RuntimeClient;
   private readonly executablePath: string | undefined;
+  /** True when the endpoint name was generated here and is ours to remove. */
+  private readonly ownsEndpoint: boolean;
   private readonly log: DesktopLog;
   private readonly now: () => number;
   private readonly probeTimeoutMs: number;
@@ -58,14 +62,8 @@ export class RuntimeController {
     this.log = options.log;
     this.now = options.now ?? Date.now;
     this.probeTimeoutMs = options.probeTimeoutMs ?? 2_500;
-    this.pipePath =
-      options.pipePath ??
-      (process.platform === "win32"
-        ? String.raw`\\.\pipe\virealm-desktop-${process.pid}-${randomUUID().slice(0, 8)}`
-        : path.join(
-            process.env.TEMP ?? "/tmp",
-            `virealm-desktop-${String(process.pid)}.sock`,
-          ));
+    this.pipePath = options.pipePath ?? defaultEndpoint();
+    this.ownsEndpoint = options.pipePath === undefined;
     this.executablePath =
       options.executablePath ?? resolveRuntimeExecutable(options);
     this.client = new RuntimeClient({ pipePath: this.pipePath });
@@ -123,6 +121,16 @@ export class RuntimeController {
     this.stopped = true;
     await this.stopHost();
     this.client.close();
+    // The runtime never unlinks its own socket: that would race a replacement
+    // instance binding the same name. This controller's endpoint is unique to
+    // it, so removing it after the daemon has stopped leaves nothing behind.
+    if (this.ownsEndpoint && !this.pipePath.startsWith("\\\\.\\pipe\\")) {
+      await Promise.all(
+        [this.pipePath, `${this.pipePath}.lock`].map((file) =>
+          rm(file, { force: true }).catch(() => undefined),
+        ),
+      );
+    }
   }
 
   private async startAndProbe(): Promise<RuntimeStatusView> {
@@ -228,6 +236,9 @@ export class RuntimeController {
               os: report.platform.os,
               architecture: report.platform.architecture,
               elevated: report.platform.elevated,
+              ...(report.platform.osVersion === undefined
+                ? {}
+                : { osVersion: report.platform.osVersion }),
             },
       isolation: report === undefined ? [] : isolationViews(report),
       checkedAtUnixMs: this.checkedAtUnixMs,
@@ -280,7 +291,50 @@ export function resolveRuntimeExecutable(
   return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
 }
 
-function isolationViews(report: CapabilityReport): IsolationCapabilityView[] {
+/**
+ * Longest Unix socket path, in bytes, that the runtime accepts. A desktop
+ * endpoint under `$TMPDIR` normally fits; a long temporary directory falls
+ * back to `/tmp` rather than failing at connect time.
+ */
+const MAX_ENDPOINT_BYTES = 100;
+
+export function defaultEndpoint(
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (platform === "win32") {
+    return String.raw`\\.\pipe\virealm-desktop-${process.pid}-${randomUUID().slice(0, 8)}`;
+  }
+  const name = `virealm-desktop-${String(process.pid)}-${randomUUID().slice(0, 8)}.sock`;
+  const primary = path.join(tmpdir(), name);
+  return Buffer.byteLength(primary) <= MAX_ENDPOINT_BYTES
+    ? primary
+    : path.join("/tmp", name);
+}
+
+export function isolationViews(
+  report: CapabilityReport,
+): IsolationCapabilityView[] {
+  if (report.platform.os === "macos") {
+    return [
+      combine(
+        "managed",
+        "进程组管理",
+        [report.processGroup ?? { state: "not_verified" }],
+        "把 Chrome 及其受管子进程放进同一 POSIX 进程组；停止或退出时向整组发送终止信号。",
+      ),
+      forceUnsupported(
+        "restricted",
+        "受限令牌",
+        "macOS 不支持：受限令牌是 Windows 专属能力，运行时不会模拟或降级。",
+      ),
+      forceUnsupported(
+        "app_container",
+        "AppContainer",
+        "macOS 不支持：AppContainer 是 Windows 专属能力，运行时不会模拟或降级。",
+      ),
+    ];
+  }
+
   return [
     combine("managed", "Job Object 进程包含", [report.jobObject]),
     combine("restricted", "受限令牌", [report.restrictedToken]),
@@ -291,23 +345,36 @@ function isolationViews(report: CapabilityReport): IsolationCapabilityView[] {
   ];
 }
 
+function forceUnsupported(
+  mode: IsolationCapabilityView["mode"],
+  label: string,
+  detail: string,
+): IsolationCapabilityView {
+  return { mode, state: "unsupported", detail: `${label}：${detail}` };
+}
+
 function combine(
   mode: IsolationCapabilityView["mode"],
   label: string,
   capabilities: readonly Capability[],
+  supportedDetail?: string,
 ): IsolationCapabilityView {
   const states = capabilities.map((capability) => capability.state);
   const state = aggregateState(states);
   const details = capabilities
     .map((capability) => capability.detail)
     .filter((detail): detail is string => detail !== undefined);
+  const positive =
+    state === "supported" && supportedDetail !== undefined
+      ? supportedDetail
+      : undefined;
   return {
     mode,
     state,
     detail:
       details.length > 0
         ? `${label}：${details.join(" ")}`
-        : `${label}：${stateLabel(state)}`,
+        : `${label}：${positive ?? stateLabel(state)}`,
   };
 }
 
@@ -346,7 +413,7 @@ function runtimeFailureMessage(
 ): string {
   switch (code) {
     case "runtime_unavailable":
-      return `无法连接到本地运行时（命名管道 ${pipePath}）。请确认运行时已启动，或在“运行时”页面重新检测。`;
+      return `无法连接到本地运行时（${endpointKind(pipePath)} ${pipePath}）。请确认运行时已启动，或在“运行时”页面重新检测。`;
     case "connection_timeout":
     case "request_timeout":
       return "本地运行时响应超时。请稍后重新检测。";
@@ -365,6 +432,11 @@ function runtimeFailureMessage(
     case "client_closed":
       return "运行时连接已关闭，请重新检测。";
   }
+}
+
+/** Named pipe on Windows, Unix domain socket elsewhere. */
+export function endpointKind(endpoint: string): string {
+  return endpoint.startsWith("\\\\.\\pipe\\") ? "命名管道" : "Unix 套接字";
 }
 
 function errorMessage(error: unknown): string {

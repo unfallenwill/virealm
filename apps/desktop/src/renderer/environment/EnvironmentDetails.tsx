@@ -5,7 +5,10 @@ import type {
   EnvironmentView,
   RuntimeStatusView,
 } from "../../shared/contracts.js";
-import { isBrowserCompatibleIsolation } from "../../shared/isolation.js";
+import {
+  isBrowserCompatibleIsolation,
+  isMacosPlatform,
+} from "../../shared/isolation.js";
 import { Button, IconButton } from "../components/Button.js";
 import { Drawer } from "../components/Drawer.js";
 import { Icon } from "../components/Icon.js";
@@ -216,7 +219,9 @@ export function EnvironmentDetails({
             onShowRuntime={onShowRuntime}
           />
         ) : null}
-        {tab === "config" ? <ConfigPanel environment={environment} /> : null}
+        {tab === "config" ? (
+          <ConfigPanel environment={environment} runtime={runtime} />
+        ) : null}
         {tab === "verification" ? (
           <VerificationPanel
             environment={environment}
@@ -453,8 +458,10 @@ function Overview({
 
 function ConfigPanel({
   environment,
+  runtime,
 }: {
   readonly environment: EnvironmentView;
+  readonly runtime: RuntimeStatusView | undefined;
 }): JSX.Element {
   const args = environment.launch?.additionalArguments ?? [];
   return (
@@ -513,7 +520,10 @@ function ConfigPanel({
         </div>
         <div className="kv">
           <KvRow label="隔离模式">
-            {isolationLabel(environment.runtimePolicy.isolation)}
+            {isolationLabel(
+              environment.runtimePolicy.isolation,
+              runtime?.platform?.os,
+            )}
             <span className="mono" style={{ color: "var(--text-tertiary)" }}>
               {" "}
               · {environment.runtimePolicy.isolation}
@@ -521,7 +531,11 @@ function ConfigPanel({
             {isBrowserCompatibleIsolation(
               environment.runtimePolicy.isolation,
             ) ? null : (
-              <span className="badge badge--warning">浏览器不兼容</span>
+              <span className="badge badge--warning">
+                {isMacosPlatform(runtime?.platform?.os)
+                  ? "macOS 不支持"
+                  : "浏览器不兼容"}
+              </span>
             )}
           </KvRow>
           <KvRow label="进程上限">
@@ -693,7 +707,14 @@ function DiagnosticsPanel({
           <KvRow label="可执行文件" mono>
             {runtime?.executablePath ?? "未找到"}
           </KvRow>
-          <KvRow label="命名管道" mono>
+          <KvRow
+            label={
+              isMacosPlatform(runtime?.platform?.os)
+                ? "Unix 套接字"
+                : "命名管道"
+            }
+            mono
+          >
             {runtime?.pipePath ?? "—"}
           </KvRow>
           <KvRow label="平台">
@@ -701,7 +722,7 @@ function DiagnosticsPanel({
               ? "—"
               : `${runtime.platform.os} · ${runtime.platform.architecture}${
                   runtime.platform.elevated ? " · 已提升" : ""
-                }`}
+                }${runtime.platform.osVersion === undefined ? "" : ` · ${runtime.platform.osVersion}`}`}
           </KvRow>
           {runtime?.error === undefined ? null : (
             <KvRow label="错误">

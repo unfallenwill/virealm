@@ -10,7 +10,7 @@ export function issueText(issue: ValidationIssueView): string {
     return "名称最多 128 个字符，且不能包含控制字符。";
   }
   if (path === "browser.executablePath") {
-    return "请选择有效的 chrome.exe，或改用自动发现。";
+    return "请选择有效的 Chrome 可执行文件，或改用自动发现。";
   }
   if (path === "timezone") {
     return "请输入有效的 IANA 时区，例如 Asia/Shanghai。";

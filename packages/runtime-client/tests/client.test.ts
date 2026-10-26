@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { PROTOCOL_VERSION, type ProcessStatus } from "@virealm/contracts";
 
 import {
   DEFAULT_RUNTIME_PIPE_PATH,
+  DEFAULT_RUNTIME_SOCKET_NAME,
+  MAX_RUNTIME_SOCKET_PATH_BYTES,
   RuntimeClient,
   RuntimeClientClosedError,
   RuntimeDisconnectedError,
@@ -16,10 +21,12 @@ import {
   RuntimeConnectionTimeoutError,
   RuntimeHostStartError,
   RuntimeClientError,
+  defaultRuntimeAddress,
   isRuntimeClientError,
 } from "../src/index.js";
 
-const windowsOnly = process.platform === "win32";
+const isWindows = process.platform === "win32";
+const platformOs = isWindows ? "windows" : "macos";
 
 interface FakeRequest {
   readonly protocolVersion?: number;
@@ -38,6 +45,7 @@ interface FakeRuntime {
 
 const servers: Server[] = [];
 const clients: RuntimeClient[] = [];
+const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   for (const client of clients.splice(0)) {
@@ -53,10 +61,30 @@ afterEach(async () => {
         }),
     ),
   );
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
+/** A fresh endpoint that fits the Unix socket path limit. */
+function endpointInTemporaryDirectory(label: string): string {
+  if (isWindows) {
+    return String.raw`\\.\pipe\virealm-${label}-${randomUUID()}`;
+  }
+  const directory = mkdtempSync(join(tmpdir(), `virealm-${label}-`));
+  temporaryDirectories.push(directory);
+  return join(directory, "runtime.sock");
+}
+
+/** An endpoint nothing listens on. */
+function unusedAddress(): string {
+  return isWindows
+    ? String.raw`\\.\pipe\virealm-unused-${randomUUID()}`
+    : join(tmpdir(), `virealm-unused-${randomUUID().slice(0, 8)}.sock`);
+}
+
 async function startFakeRuntime(handler: Handler): Promise<FakeRuntime> {
-  const pipePath = String.raw`\\.\pipe\virealm-test-${randomUUID()}`;
+  const pipePath = endpointInTemporaryDirectory("test");
   const requests: FakeRequest[] = [];
   const server = createServer((socket) => {
     let buffer = "";
@@ -133,21 +161,43 @@ function replyError(
   );
 }
 
-const capabilityReport = {
-  platform: {
-    os: "windows",
-    version: { major: 10, minor: 0, build: 22631 },
-    architecture: "x86_64",
-    elevated: false,
-    integrityLevel: "medium",
-  },
-  jobObject: { state: "supported" },
-  appContainer: { state: "supported" },
-  appContainerAcl: { state: "supported" },
-  restrictedToken: { state: "supported" },
-  processMitigation: { state: "not_verified" },
-  etw: { state: "not_verified" },
-};
+const capabilityReport = isWindows
+  ? {
+      platform: {
+        os: "windows",
+        version: { major: 10, minor: 0, build: 22631 },
+        architecture: "x86_64",
+        elevated: false,
+        integrityLevel: "medium",
+      },
+      jobObject: { state: "supported" },
+      appContainer: { state: "supported" },
+      appContainerAcl: { state: "supported" },
+      restrictedToken: { state: "supported" },
+      processMitigation: { state: "not_verified" },
+      etw: { state: "not_verified" },
+    }
+  : {
+      platform: {
+        os: "macos",
+        version: { major: 27, minor: 0, build: 1 },
+        osVersion: "27.0.1",
+        architecture: "arm64",
+        elevated: false,
+        integrityLevel: "unknown",
+      },
+      jobObject: { state: "unsupported" },
+      appContainer: { state: "unsupported" },
+      appContainerAcl: { state: "unsupported" },
+      restrictedToken: { state: "unsupported" },
+      processMitigation: { state: "unsupported" },
+      etw: { state: "unsupported" },
+      processGroup: { state: "supported" },
+      resourceLimits: {
+        maxProcesses: { state: "unavailable" },
+        memoryLimit: { state: "unavailable" },
+      },
+    };
 
 const processStatus: ProcessStatus = {
   processInstanceId: "4242:134129088000000000",
@@ -157,31 +207,48 @@ const processStatus: ProcessStatus = {
   state: { state: "running", pid: 4242 },
   applied: {
     mode: "managed",
-    jobObjectAttached: true,
+    jobObjectAttached: isWindows,
     appContainerToken: false,
     restrictedToken: false,
     lowIntegrity: false,
     fileAccessRestricted: false,
     networkAccess: "allow",
     networkCapabilitiesVerified: false,
+    ...(isWindows
+      ? {}
+      : {
+          processGroupAttached: true,
+          processGroupId: 4242,
+          killOnCloseArmed: true,
+        }),
   },
 };
 
+const chromeExecutable = isWindows
+  ? String.raw`C:\Program Files\Google\Chrome\Application\chrome.exe`
+  : "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromeProgramRoot = isWindows
+  ? String.raw`C:\Program Files\Google\Chrome\Application`
+  : "/Applications/Google Chrome.app";
+const dataDirectory = isWindows
+  ? String.raw`C:\Virealm\env-a`
+  : "/tmp/virealm-env-a";
+
 const launchParams = {
   environmentId: "env-a",
-  executable: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-  arguments: ["--user-data-dir=C:\\Virealm\\env-a"],
-  dataDirectory: "C:\\Virealm\\env-a",
+  executable: chromeExecutable,
+  arguments: [`--user-data-dir=${dataDirectory}`],
+  dataDirectory,
   policy: {
     isolation: "managed" as const,
-    allowedProgramRoots: ["C:\\Program Files\\Google\\Chrome\\Application"],
+    allowedProgramRoots: [chromeProgramRoot],
     fileAccess: { kind: "inherited" as const },
     networkAccess: "allow" as const,
     containment: { killOnClose: true as const },
   },
 };
 
-describe.skipIf(!windowsOnly)("RuntimeClient", () => {
+describe("RuntimeClient", () => {
   it("sends a contract-valid request and returns the validated result", async () => {
     const runtime = await startFakeRuntime((request, socket) => {
       reply(socket, request, capabilityReport);
@@ -190,7 +257,13 @@ describe.skipIf(!windowsOnly)("RuntimeClient", () => {
 
     const result = await client.getCapabilities();
 
-    expect(result.jobObject.state).toBe("supported");
+    expect(result.platform.os).toBe(platformOs);
+    expect(result.jobObject.state).toBe(
+      isWindows ? "supported" : "unsupported",
+    );
+    if (!isWindows) {
+      expect(result.processGroup?.state).toBe("supported");
+    }
     expect(runtime.requests).toHaveLength(1);
     expect(runtime.requests[0]?.protocolVersion).toBe(PROTOCOL_VERSION);
     expect(runtime.requests[0]?.method).toBe("runtime.getCapabilities");
@@ -231,10 +304,8 @@ describe.skipIf(!windowsOnly)("RuntimeClient", () => {
     expect(operation.error.retryable).toBe(true);
   });
 
-  it("rejects an invalid local request before touching the pipe", async () => {
-    const client = makeClient(
-      String.raw`\\.\pipe\virealm-unused-${randomUUID()}`,
-    );
+  it("rejects an invalid local request before touching the endpoint", async () => {
+    const client = makeClient(unusedAddress());
 
     const failure = await client
       .launch({ ...launchParams, executable: "chrome.exe" })
@@ -310,10 +381,7 @@ describe.skipIf(!windowsOnly)("RuntimeClient", () => {
   });
 
   it("reports an unavailable runtime instead of hanging", async () => {
-    const client = makeClient(
-      String.raw`\\.\pipe\virealm-missing-${randomUUID()}`,
-      { connectTimeoutMs: 500 },
-    );
+    const client = makeClient(unusedAddress(), { connectTimeoutMs: 500 });
 
     const failure = await client
       .getCapabilities()
@@ -379,7 +447,7 @@ describe.skipIf(!windowsOnly)("RuntimeClient", () => {
     await new Promise((resolve) => setTimeout(resolve, 80));
     const second = await client.getCapabilities();
 
-    expect(second.platform.os).toBe("windows");
+    expect(second.platform.os).toBe(platformOs);
     expect(runtime.requests).toHaveLength(2);
   });
 
@@ -413,9 +481,7 @@ describe.skipIf(!windowsOnly)("RuntimeClient", () => {
   });
 
   it("refuses to reuse a closed client", async () => {
-    const client = makeClient(
-      String.raw`\\.\pipe\virealm-unused-${randomUUID()}`,
-    );
+    const client = makeClient(unusedAddress());
     client.close();
 
     const failure = await client
@@ -427,9 +493,7 @@ describe.skipIf(!windowsOnly)("RuntimeClient", () => {
   });
 
   it("refuses a signal that was already aborted", async () => {
-    const client = makeClient(
-      String.raw`\\.\pipe\virealm-unused-${randomUUID()}`,
-    );
+    const client = makeClient(unusedAddress());
     const controller = new AbortController();
     controller.abort();
 
@@ -453,8 +517,8 @@ describe.skipIf(!windowsOnly)("RuntimeClient", () => {
       client.getCapabilities(),
     ]);
 
-    expect(first.platform.os).toBe("windows");
-    expect(second.platform.os).toBe("windows");
+    expect(first.platform.os).toBe(platformOs);
+    expect(second.platform.os).toBe(platformOs);
     expect(runtime.requests).toHaveLength(2);
   });
 
@@ -530,12 +594,43 @@ describe.skipIf(!windowsOnly)("RuntimeClient", () => {
     expect(failure).toBeInstanceOf(RuntimeProtocolViolationError);
   });
 
-  it("defaults to the runtime's standard pipe", () => {
+  it("defaults to the platform's standard endpoint", () => {
     const client = new RuntimeClient();
     clients.push(client);
 
-    expect(client.pipePath).toBe(DEFAULT_RUNTIME_PIPE_PATH);
+    expect(client.pipePath).toBe(defaultRuntimeAddress());
+    if (isWindows) {
+      expect(client.pipePath).toBe(DEFAULT_RUNTIME_PIPE_PATH);
+    } else {
+      expect(client.pipePath).toBe(join(tmpdir(), DEFAULT_RUNTIME_SOCKET_NAME));
+    }
     expect(client.isConnected()).toBe(false);
+  });
+
+  it.skipIf(isWindows)("rejects a Unix socket path beyond the limit", () => {
+    const address = join(
+      tmpdir(),
+      `${"a".repeat(MAX_RUNTIME_SOCKET_PATH_BYTES)}.sock`,
+    );
+
+    let failure: unknown;
+    try {
+      new RuntimeClient({ pipePath: address });
+    } catch (error: unknown) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(RuntimeClientError);
+    expect((failure as RuntimeClientError).code).toBe("invalid_request");
+    expect((failure as RuntimeClientError).message).toContain(
+      `at most ${String(MAX_RUNTIME_SOCKET_PATH_BYTES)} bytes`,
+    );
+  });
+
+  it.skipIf(isWindows)("rejects an empty endpoint", () => {
+    expect(() => new RuntimeClient({ pipePath: "" })).toThrow(
+      RuntimeClientError,
+    );
   });
 
   it("skips empty lines between messages", async () => {
@@ -547,7 +642,7 @@ describe.skipIf(!windowsOnly)("RuntimeClient", () => {
 
     const result = await client.getCapabilities();
 
-    expect(result.platform.os).toBe("windows");
+    expect(result.platform.os).toBe(platformOs);
   });
 
   it("rejects an abortable pending request when the client closes", async () => {

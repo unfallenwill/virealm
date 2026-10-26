@@ -22,7 +22,7 @@ export type RequestId = string
  */
 export type EnvironmentId = string
 /**
- * Absolute Windows path (drive-qualified or UNC). Relative paths are rejected before any process is created.
+ * Absolute Windows path (drive-qualified or UNC) or POSIX absolute path. Relative paths are rejected before any process is created.
  */
 export type FilePath = string
 /**
@@ -186,6 +186,9 @@ method: "runtime.getCapabilities"
 ok: true
 result: CapabilityReport
 }
+/**
+ * The six Windows keys stay required for every platform so a v2 consumer can read any report. On macOS they report unsupported, while processGroup, unixSocket and resourceLimits describe what the host actually provides.
+ */
 export interface CapabilityReport {
 platform: PlatformInfo
 jobObject: Capability
@@ -194,6 +197,10 @@ appContainerAcl: Capability
 restrictedToken: Capability
 processMitigation: Capability
 etw: Capability
+processGroup?: Capability1
+unixSocket?: Capability2
+processIdentity?: Capability3
+resourceLimits?: ResourceLimits
 /**
  * @maxItems 16
  */
@@ -201,7 +208,11 @@ notes?: string[]
 }
 export interface PlatformInfo {
 os: string
-version: WindowsVersion
+version: PlatformVersion
+/**
+ * Exact product version string, e.g. macOS "27.0.1". Omitted on Windows.
+ */
+osVersion?: string
 architecture: string
 /**
  * Whether the calling process token is elevated.
@@ -209,7 +220,10 @@ architecture: string
 elevated: boolean
 integrityLevel: IntegrityLevel
 }
-export interface WindowsVersion {
+/**
+ * Windows reports major/minor/build. macOS reports major/minor/patch from kern.osproductversion, with the patch component carried in build; osVersion carries the exact product string.
+ */
+export interface PlatformVersion {
 major: number
 minor: number
 build: number
@@ -217,6 +231,34 @@ build: number
 export interface Capability {
 state: CapabilityState
 detail?: string
+}
+/**
+ * POSIX process-group containment. Omitted on Windows.
+ */
+export interface Capability1 {
+state: CapabilityState
+detail?: string
+}
+/**
+ * Unix domain socket transport with peer credential checks. Omitted on Windows.
+ */
+export interface Capability2 {
+state: CapabilityState
+detail?: string
+}
+/**
+ * Process identity derived from the kernel start time. Omitted on Windows.
+ */
+export interface Capability3 {
+state: CapabilityState
+detail?: string
+}
+/**
+ * Per-tree process and memory limits. Omitted on Windows, where Job Object limits cover them.
+ */
+export interface ResourceLimits {
+maxProcesses: Capability
+memoryLimit: Capability
 }
 export interface LaunchResponse {
 protocolVersion: ProtocolVersion
@@ -275,6 +317,18 @@ networkAccess: NetworkAccess
  * The child token's capability SIDs matched the network policy.
  */
 networkCapabilitiesVerified: boolean
+/**
+ * The child was placed in a dedicated POSIX process group. Omitted on Windows.
+ */
+processGroupAttached?: boolean
+/**
+ * The observed process-group id. Omitted on Windows.
+ */
+processGroupId?: number
+/**
+ * The runtime will signal the process group when its handle is dropped. Omitted on Windows.
+ */
+killOnCloseArmed?: boolean
 }
 export interface DiagnosticEvent {
 timestampUnixMs: number
@@ -338,13 +392,17 @@ details?: ErrorDetails
 }
 export interface ErrorDetails {
 /**
- * Windows API that failed, when the failure came from a platform call.
+ * Platform API that failed, when the failure came from a platform call.
  */
 operation?: string
 /**
  * Raw Win32 error code. Diagnostic only; do not parse the number to decide behaviour.
  */
 windowsError?: number
+/**
+ * Raw POSIX errno. Diagnostic only; mutually exclusive with windowsError.
+ */
+errno?: number
 /**
  * Printable method name named by an unknown_method error.
  */

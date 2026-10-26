@@ -53,6 +53,20 @@
         "networkCapabilitiesVerified": {
           "type": "boolean",
           "description": "The child token's capability SIDs matched the network policy."
+        },
+        "processGroupAttached": {
+          "type": "boolean",
+          "description": "The child was placed in a dedicated POSIX process group. Omitted on Windows."
+        },
+        "processGroupId": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "The observed process-group id. Omitted on Windows."
+        },
+        "killOnCloseArmed": {
+          "type": "boolean",
+          "description": "The runtime will signal the process group when its handle is dropped. Omitted on Windows."
         }
       }
     }

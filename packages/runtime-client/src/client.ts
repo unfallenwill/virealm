@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { connect, type Socket } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   PROTOCOL_VERSION,
@@ -29,15 +31,37 @@ import {
   RuntimeClientError,
 } from "./errors.js";
 
-/** Default pipe created by `virealm-runtime serve`. */
+/** Default named pipe created by `virealm-runtime serve` on Windows. */
 export const DEFAULT_RUNTIME_PIPE_PATH = String.raw`\\.\pipe\virealm-runtime-v2`;
+
+/** File name of the Unix domain socket the runtime serves on macOS. */
+export const DEFAULT_RUNTIME_SOCKET_NAME = "virealm-runtime-v2.sock";
+
+/** Longest socket path, in bytes, the runtime accepts on Unix. */
+export const MAX_RUNTIME_SOCKET_PATH_BYTES = 100;
+
+/**
+ * Default runtime endpoint for the current platform.
+ *
+ * Windows addresses the runtime's named pipe. Other platforms use the Unix
+ * domain socket the runtime creates directly in `os.tmpdir()`.
+ */
+export function defaultRuntimeAddress(): string {
+  if (process.platform === "win32") {
+    return DEFAULT_RUNTIME_PIPE_PATH;
+  }
+  return join(tmpdir(), DEFAULT_RUNTIME_SOCKET_NAME);
+}
 
 const MAX_BUFFER_BYTES = 8 * 1024 * 1024;
 
 export interface RuntimeClientOptions {
-  /** Full Windows pipe path. Defaults to the runtime's standard pipe. */
+  /**
+   * Runtime endpoint: a Windows named pipe or a Unix domain socket path.
+   * Defaults to `defaultRuntimeAddress()`.
+   */
   readonly pipePath?: string;
-  /** Budget for opening the pipe. */
+  /** Budget for opening the endpoint. */
   readonly connectTimeoutMs?: number;
   /** Budget for one request/response exchange. */
   readonly requestTimeoutMs?: number;
@@ -55,8 +79,8 @@ interface PendingRequest {
 /**
  * Sequential-request client for the runtime's newline-delimited JSON protocol.
  *
- * One pipe connection is shared and re-opened on demand. Every outgoing and
- * incoming message is validated against `@virealm/contracts`; an invalid
+ * One endpoint connection is shared and re-opened on demand. Every outgoing
+ * and incoming message is validated against `@virealm/contracts`; an invalid
  * response closes the connection instead of being interpreted loosely.
  */
 export class RuntimeClient {
@@ -70,12 +94,13 @@ export class RuntimeClient {
   private closed = false;
 
   constructor(options: RuntimeClientOptions = {}) {
-    this.pipePath = options.pipePath ?? DEFAULT_RUNTIME_PIPE_PATH;
+    this.pipePath = options.pipePath ?? defaultRuntimeAddress();
+    assertValidAddress(this.pipePath);
     this.connectTimeoutMs = options.connectTimeoutMs ?? 5_000;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 15_000;
   }
 
-  /** Whether a live pipe connection is currently open. */
+  /** Whether a live endpoint connection is currently open. */
   isConnected(): boolean {
     return this.socket !== undefined && !this.socket.destroyed;
   }
@@ -166,7 +191,7 @@ export class RuntimeClient {
     ).result;
   }
 
-  /** Close the pipe and reject outstanding requests. Safe to call twice. */
+  /** Close the connection and reject outstanding requests. Safe to call twice. */
   close(): void {
     if (this.closed) {
       return;
@@ -478,4 +503,31 @@ export class RuntimeClient {
 
 function newRequestId(): string {
   return `req_${randomUUID()}`;
+}
+
+/**
+ * Reject an endpoint the runtime cannot bind.
+ *
+ * Unix domain socket paths are limited by `sun_path`; the runtime enforces the
+ * same 100-byte ceiling so a bad path fails here rather than at serve time.
+ */
+function assertValidAddress(address: string): void {
+  if (process.platform === "win32") {
+    return;
+  }
+  const bytes = Buffer.byteLength(address, "utf8");
+  if (bytes === 0) {
+    throw new RuntimeClientError(
+      "invalid_request",
+      "the runtime endpoint must not be empty",
+    );
+  }
+  if (bytes > MAX_RUNTIME_SOCKET_PATH_BYTES) {
+    throw new RuntimeClientError(
+      "invalid_request",
+      `the runtime endpoint must be at most ${String(
+        MAX_RUNTIME_SOCKET_PATH_BYTES,
+      )} bytes on this platform; "${address}" is ${String(bytes)} bytes`,
+    );
+  }
 }

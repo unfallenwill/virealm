@@ -21,6 +21,7 @@ fn capability_report_uses_camel_case_fields_and_snake_case_states() {
                 minor: 0,
                 build: 26100,
             },
+            os_version: None,
             architecture: "x86_64".into(),
             elevated: false,
             integrity_level: IntegrityLevel::Medium,
@@ -31,6 +32,8 @@ fn capability_report_uses_camel_case_fields_and_snake_case_states() {
         restricted_token: Capability::unsupported("missing"),
         process_mitigation: Capability::supported("queried"),
         etw: Capability::not_verified("not implemented"),
+        process_group: None,
+        resource_limits: None,
         notes: Vec::new(),
     };
 
@@ -60,7 +63,16 @@ fn capability_report_uses_camel_case_fields_and_snake_case_states() {
         Value::String("medium".into())
     );
     assert_eq!(value["platform"]["version"]["build"], 26100);
+    assert!(
+        value["platform"].get("osVersion").is_none(),
+        "Windows reports no product version string"
+    );
     assert!(value.get("notes").is_none(), "empty notes are omitted");
+    assert!(
+        value.get("processGroup").is_none(),
+        "Windows reports no process group capability"
+    );
+    assert!(value.get("resourceLimits").is_none());
 }
 
 #[test]
@@ -110,6 +122,9 @@ fn process_status_round_trips_with_evidence() {
             file_access_restricted: true,
             network_access: NetworkAccess::Deny,
             network_capabilities_verified: true,
+            process_group_attached: None,
+            process_group_id: None,
+            kill_on_close_armed: None,
         },
     };
 
@@ -126,9 +141,45 @@ fn process_status_round_trips_with_evidence() {
         Value::String("deny".into())
     );
     assert_eq!(value["applied"]["networkCapabilitiesVerified"], true);
+    for key in ["processGroupAttached", "processGroupId", "killOnCloseArmed"] {
+        assert!(
+            value["applied"].get(key).is_none(),
+            "Windows output must not invent {key}"
+        );
+    }
 
     let decoded: ProcessStatus = serde_json::from_value(value).expect("status must deserialize");
     assert_eq!(decoded, status);
+}
+
+#[test]
+fn macos_process_evidence_uses_optional_fields() {
+    let status = ProcessStatus {
+        id: ProcessId {
+            pid: 4242,
+            creation_time_100ns: 134_129_088_000_000_000,
+        },
+        state: ProcessState::Running { pid: 4242 },
+        applied: AppliedIsolation {
+            mode: IsolationMode::Managed,
+            job_object_attached: false,
+            app_container_token: false,
+            restricted_token: false,
+            low_integrity: false,
+            file_access_restricted: false,
+            network_access: NetworkAccess::Allow,
+            network_capabilities_verified: false,
+            process_group_attached: Some(true),
+            process_group_id: Some(4242),
+            kill_on_close_armed: Some(true),
+        },
+    };
+
+    let value = serde_json::to_value(&status).expect("status must serialize");
+    assert_eq!(value["applied"]["processGroupAttached"], true);
+    assert_eq!(value["applied"]["processGroupId"], 4242);
+    assert_eq!(value["applied"]["killOnCloseArmed"], true);
+    assert_eq!(value["applied"]["jobObjectAttached"], false);
 }
 
 #[test]
@@ -139,7 +190,16 @@ fn error_info_carries_code_operation_and_win32_code() {
     let value = serde_json::to_value(&info).expect("error must serialize");
     assert_eq!(value["code"], Value::String("platform_failure".into()));
     assert_eq!(value["operation"], Value::String("CreateProcessW".into()));
-    assert_eq!(value["windowsError"], 2);
+    #[cfg(windows)]
+    {
+        assert_eq!(value["windowsError"], 2);
+        assert!(value.get("errno").is_none());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        assert_eq!(value["errno"], 2);
+        assert!(value.get("windowsError").is_none());
+    }
 
     for code in [
         ErrorCode::InvalidRequest,
@@ -154,10 +214,12 @@ fn error_info_carries_code_operation_and_win32_code() {
             message: "x".into(),
             operation: None,
             windows_error: None,
+            errno: None,
         };
         let value = serde_json::to_value(info).expect("error info must serialize");
         assert!(value.get("operation").is_none());
         assert!(value.get("windowsError").is_none());
+        assert!(value.get("errno").is_none());
     }
 }
 

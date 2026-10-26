@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 
 import { DesktopError } from "../../src/main/errors.js";
 import { JsonEnvironmentStore } from "../../src/main/persistence/environment-store.js";
-import { MemoryFiles, recordFor } from "./helpers/fakes.js";
+import { TEST_DATA_ROOT, MemoryFiles, recordFor } from "./helpers/fakes.js";
 
-const FILE = "C:\\virealm-test\\environments.json";
+const FILE = path.join(TEST_DATA_ROOT, "environments.json");
 
 function storeWith(files: MemoryFiles, now = 42): JsonEnvironmentStore {
   return new JsonEnvironmentStore(FILE, files, () => now);

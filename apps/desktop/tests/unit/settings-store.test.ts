@@ -1,9 +1,15 @@
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { JsonSettingsStore } from "../../src/main/persistence/settings-store.js";
-import { MemoryFiles } from "./helpers/fakes.js";
+import {
+  TEST_CHROME_PATH,
+  TEST_DATA_ROOT,
+  MemoryFiles,
+} from "./helpers/fakes.js";
 
-const FILE = "C:\\virealm-test\\settings.json";
+const FILE = path.join(TEST_DATA_ROOT, "settings.json");
 
 describe("JsonSettingsStore", () => {
   it("starts with dark theme and no browser override", async () => {
@@ -24,26 +30,26 @@ describe("JsonSettingsStore", () => {
       defaultBrowserPath: undefined,
     });
     expect(
-      await store.update({ defaultBrowserPath: "C:\\Chrome\\chrome.exe" }),
+      await store.update({ defaultBrowserPath: TEST_CHROME_PATH }),
     ).toEqual({
       theme: "light",
-      defaultBrowserPath: "C:\\Chrome\\chrome.exe",
+      defaultBrowserPath: TEST_CHROME_PATH,
     });
     expect(await store.update({})).toEqual({
       theme: "light",
-      defaultBrowserPath: "C:\\Chrome\\chrome.exe",
+      defaultBrowserPath: TEST_CHROME_PATH,
     });
     expect(JSON.parse(files.files.get(FILE) ?? "{}")).toMatchObject({
       version: 1,
       theme: "light",
-      defaultBrowserPath: "C:\\Chrome\\chrome.exe",
+      defaultBrowserPath: TEST_CHROME_PATH,
     });
   });
 
   it("clears an explicit default browser path", async () => {
     const files = new MemoryFiles();
     const store = new JsonSettingsStore(FILE, files);
-    await store.update({ defaultBrowserPath: "C:\\Chrome\\chrome.exe" });
+    await store.update({ defaultBrowserPath: TEST_CHROME_PATH });
 
     expect(await store.update({ defaultBrowserPath: undefined })).toEqual({
       theme: "dark",
@@ -63,13 +69,13 @@ describe("JsonSettingsStore", () => {
       JSON.stringify({
         version: 1,
         theme: "system",
-        defaultBrowserPath: "C:\\Chrome\\chrome.exe",
+        defaultBrowserPath: TEST_CHROME_PATH,
       }),
     );
     const store = new JsonSettingsStore(FILE, files);
     expect(await store.get()).toEqual({
       theme: "system",
-      defaultBrowserPath: "C:\\Chrome\\chrome.exe",
+      defaultBrowserPath: TEST_CHROME_PATH,
     });
   });
 

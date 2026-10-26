@@ -1,0 +1,33 @@
+{
+  "platform": {
+    "os": "macos",
+    "version": { "major": 27, "minor": 0, "build": 1 },
+    "architecture": "arm64",
+    "elevated": false,
+    "integrityLevel": "unknown"
+  },
+  "appContainer": {
+    "state": "unsupported",
+    "detail": "AppContainer is a Windows primitive"
+  },
+  "appContainerAcl": {
+    "state": "unsupported",
+    "detail": "AppContainer is a Windows primitive"
+  },
+  "restrictedToken": {
+    "state": "unsupported",
+    "detail": "restricted tokens are a Windows primitive"
+  },
+  "processMitigation": {
+    "state": "unsupported",
+    "detail": "process mitigation policies are a Windows primitive"
+  },
+  "etw": {
+    "state": "unsupported",
+    "detail": "ETW is a Windows facility"
+  },
+  "processGroup": {
+    "state": "supported",
+    "detail": "created a child in its own process group and verified getpgid"
+  }
+}

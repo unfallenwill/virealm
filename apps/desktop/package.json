@@ -56,15 +56,32 @@
       "dist/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "../../target/release/virealm-runtime.exe",
-        "to": "runtime/virealm-runtime.exe"
-      }
-    ],
     "win": {
       "target": [
         "dir"
+      ],
+      "extraResources": [
+        {
+          "from": "../../target/release/virealm-runtime.exe",
+          "to": "runtime/virealm-runtime.exe"
+        }
+      ]
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "identity": null,
+      "extraResources": [
+        {
+          "from": "../../target/release/virealm-runtime",
+          "to": "runtime/virealm-runtime"
+        }
       ]
     }
   }
