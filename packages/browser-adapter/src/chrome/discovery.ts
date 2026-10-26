@@ -1,4 +1,11 @@
-import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -231,14 +238,16 @@ export function inspectExecutable(
     if (!MAC_EXECUTABLE_NAMES.has(path.basename(executablePath))) {
       return undefined;
     }
-    let stats: ReturnType<typeof statSync>;
     try {
-      stats = statSync(executablePath);
+      // A bundle executable that is not executable cannot be launched. Ask the
+      // OS instead of reading mode bits: this honours ACLs on macOS and behaves
+      // the same as an existence check on Windows, where tests exercise the
+      // bundle layout but the host has no executable bit.
+      if (!statSync(executablePath).isFile()) {
+        return undefined;
+      }
+      accessSync(executablePath, constants.X_OK);
     } catch {
-      return undefined;
-    }
-    // A bundle executable that is not executable cannot be launched.
-    if (!stats.isFile() || (stats.mode & 0o111) === 0) {
       return undefined;
     }
   }

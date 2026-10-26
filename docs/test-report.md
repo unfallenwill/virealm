@@ -376,7 +376,7 @@ CI 运行器是 GitHub 的 `windows-latest` / `ubuntu-latest`，其上安装的 
 | `contracts:test` | 通过：86 个测试（4 个文件） |
 | `runtime-client:test` | 通过：26 个测试（1 个文件） |
 | `adapter:lint` / `format:check` / `typecheck` / `build` | 通过 |
-| `adapter:test` | 通过：255 个测试（12 个文件） |
+| `adapter:test` | 通过：261 个测试（12 个文件） |
 | `desktop:lint` / `format:check` / `typecheck` / `build` | 通过 |
 | `desktop:test` | 通过：254 个测试（12 个文件） |
 
@@ -386,7 +386,7 @@ CI 运行器是 GitHub 的 `windows-latest` / `ubuntu-latest`，其上安装的 
 | --- | --- | --- | --- | --- |
 | `@virealm/contracts` | 99.08% | — | — | — |
 | `@virealm/runtime-client` | 94.35% | — | — | — |
-| `@virealm/browser-adapter` | 97.14% | 90.38% | 95.49% | 97.69% |
+| `@virealm/browser-adapter` | 97.47% | 90.78% | 95.49% | 98.02% |
 | `@virealm/desktop` | 96.20% | 94.01% | 94.88% | 96.46% |
 
 「—」表示本次只读取了语句覆盖率汇总，没有记录该包的其余三项汇总，不能据此
@@ -437,6 +437,10 @@ macOS 集成测试覆盖的具体行为：
   `resourceLimits`，Windows 进程状态不含 macOS 的三个可选字段——即线上 JSON 形状
   不变；
 - 契约的 Windows fixtures 未被修改，`contracts:check-generated` 与契约测试通过；
+- 浏览器适配层的 macOS 发现用例不再按主机整组跳过：测试显式传入 `platform`，
+  Windows CI 也执行 macOS 布局用例；可执行性检查改用 `accessSync(X_OK)`，在
+  Windows 上等价于存在性检查。此前整组跳过导致 Windows 分支覆盖率降到 87.98%，
+  低于 90% 阈值；
 - `.github/workflows/ci.yml` 的四个 Windows 作业保持原样，新增的 macOS 作业不替换
   它们。
 
