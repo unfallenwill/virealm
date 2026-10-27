@@ -40,6 +40,8 @@
     "desktop:build": "corepack pnpm --filter @virealm/desktop build",
     "desktop:test:integration": "corepack pnpm --filter @virealm/desktop test:integration",
     "desktop:package": "corepack pnpm --filter @virealm/desktop package",
+    "desktop:package:win": "corepack pnpm --filter @virealm/desktop package:win",
+    "desktop:package:mac": "corepack pnpm --filter @virealm/desktop package:mac",
     "check": "corepack pnpm rust:fmt:check && corepack pnpm rust:clippy && corepack pnpm rust:test && corepack pnpm contracts:check-generated && corepack pnpm contracts:lint && corepack pnpm contracts:format:check && corepack pnpm contracts:typecheck && corepack pnpm contracts:test && corepack pnpm contracts:build && corepack pnpm runtime-client:lint && corepack pnpm runtime-client:format:check && corepack pnpm runtime-client:typecheck && corepack pnpm runtime-client:test && corepack pnpm runtime-client:build && corepack pnpm adapter:lint && corepack pnpm adapter:format:check && corepack pnpm adapter:typecheck && corepack pnpm adapter:test && corepack pnpm adapter:build && corepack pnpm desktop:lint && corepack pnpm desktop:format:check && corepack pnpm desktop:typecheck && corepack pnpm desktop:test && corepack pnpm desktop:build"
   }
 }

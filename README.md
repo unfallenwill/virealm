@@ -7,8 +7,8 @@
 
 | 平台 | 状态 | 隔离级别 | 运行时端点 | 打包 |
 | --- | --- | --- | --- | --- |
-| Windows 11 x86_64 | 已实现并实测 | `managed`（Job Object）、`restricted`、`app_container`；Chrome 只能使用 `managed` | 命名管道 | `dir` |
-| macOS 27 arm64 | 已实现并实测 | `managed`（POSIX 进程组）；不提供 `restricted` / `app_container` | Unix domain socket | `dir`（`.app`，未签名） |
+| Windows 11 x86_64 | 已实现并实测 | `managed`（Job Object）、`restricted`、`app_container`；Chrome 只能使用 `managed` | 命名管道 | NSIS x64 安装器；本地 `dir` |
+| macOS 27 arm64 | 已实现并实测 | `managed`（POSIX 进程组）；不提供 `restricted` / `app_container` | Unix domain socket | DMG（arm64，未签名）；本地 `dir` |
 
 两个平台都不把 `managed` 当作沙箱：Windows 用 Job Object、macOS 用进程组约束
 生命周期，文件与网络仍继承当前用户。`restricted` / `app_container` 是 Windows
@@ -55,8 +55,15 @@ Browser Adapter。使用说明见 [apps/desktop/README.md](apps/desktop/README.m
 
 ```
 virealm/
+├── .github/
+│   ├── release-notes.md          # Release 的安装说明模板
+│   └── workflows/
+│       ├── ci.yml
+│       └── release.yml           # tag 触发的安装包构建与发布
 ├── apps/
 │   └── desktop/                  # 第三阶段（已实现）：Electron + React 环境管理 UI
+│       ├── build-resources/      # NSIS 安装器 include（安装后重授 ACL）
+│       └── scripts/              # 构建、打包与安装包验证脚本
 ├── packages/
 │   ├── contracts/                # 协议 Schema、生成类型与运行时校验器
 │   ├── runtime-client/           # runtime 管道客户端与 daemon 启动辅助
@@ -68,6 +75,7 @@ virealm/
 │   ├── component-contracts.md
 │   ├── security-model.md
 │   ├── development.md
+│   ├── release.md
 │   ├── test-report.md
 │   ├── known-limitations.md
 │   └── screenshots/              # 界面检查截图
@@ -129,12 +137,19 @@ corepack pnpm desktop:build
 cargo build --release -p virealm-process-runtime --bin virealm-runtime
 corepack pnpm desktop:test:integration
 corepack pnpm desktop:package
+corepack pnpm desktop:package:win   # Windows NSIS x64 安装器
+corepack pnpm desktop:package:mac   # macOS arm64 DMG
 ```
 
-macOS 的打包产物位于 `apps/desktop/release/mac-arm64/Virealm.app`，运行时随包
-放在 `Contents/Resources/runtime/virealm-runtime`。该产物未签名、未公证，只适合
-本机运行。真实 Chrome 集成测试需要 `/Applications/Google Chrome.app`；
-CI 中设置 `VIREALM_REQUIRE_INTEGRATION=1` 可让缺少前置条件直接失败而不是跳过。
+`desktop:package` 仍产出 `dir`：macOS 的 `apps/desktop/release/mac-arm64/Virealm.app`
+与 Windows 的 `win-unpacked`，运行时分别放在
+`Contents/Resources/runtime/` 与 `resources/runtime/`。安装器由 tag 触发的
+发布流水线构建，也可以在对应平台用 `desktop:package:win` /
+`desktop:package:mac` 本地构建；两者都未签名。发布流程、版本规则与演练方式见
+[docs/release.md](docs/release.md)。
+
+真实 Chrome 集成测试需要 `/Applications/Google Chrome.app`；CI 中设置
+`VIREALM_REQUIRE_INTEGRATION=1` 可让缺少前置条件直接失败而不是跳过。
 
 完整命令与阶段计划见 [docs/development.md](docs/development.md)。
 

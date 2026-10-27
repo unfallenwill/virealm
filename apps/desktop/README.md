@@ -44,7 +44,10 @@ corepack pnpm --filter @virealm/desktop lint       # ESLint
 corepack pnpm --filter @virealm/desktop typecheck  # tsc（main + renderer）
 corepack pnpm --filter @virealm/desktop test       # 单元 + 安全测试（带覆盖率）
 corepack pnpm --filter @virealm/desktop test:integration  # 真实运行时 + Chrome + Electron E2E
-corepack pnpm --filter @virealm/desktop package    # electron-builder 打包
+corepack pnpm --filter @virealm/desktop package    # electron-builder，dir 目标
+corepack pnpm --filter @virealm/desktop package:win  # Windows NSIS x64
+corepack pnpm --filter @virealm/desktop package:mac  # macOS arm64 DMG
+corepack pnpm --filter @virealm/desktop set-version 0.1.0
 ```
 
 打包需要先构建发布版运行时：
@@ -53,7 +56,7 @@ corepack pnpm --filter @virealm/desktop package    # electron-builder 打包
 cargo build --release -p virealm-process-runtime --bin virealm-runtime
 ```
 
-`electron-builder` 使用 `dir` 目标，按平台放置运行时：
+`package` 使用 `dir` 目标，按平台放置运行时：
 
 - Windows：`virealm-runtime.exe` 放进 `resources/runtime/`，产出
   `release/win-unpacked`；`scripts/after-pack.mjs` 校验其存在，并为安装目录授予
@@ -62,6 +65,18 @@ cargo build --release -p virealm-process-runtime --bin virealm-runtime
 - macOS：`virealm-runtime` 放进 `Virealm.app/Contents/Resources/runtime/`，产出
   `release/mac-arm64/Virealm.app`；`after-pack` 校验它是 Mach-O 且设置 `0755`。
   产物未签名、未公证，跨机分发会被 Gatekeeper 拦截。
+
+安装器由显式目标构建：
+
+- `package:win`：NSIS x64 一键安装器，按当前用户安装到
+  `%LOCALAPPDATA%\Programs\Virealm`。NSIS 解包不保留 ACL，因此
+  `build-resources/installer.nsh` 的 `customInstall` 会为 `$INSTDIR` 递归授予
+  `ALL APPLICATION PACKAGES` 只读权限；授权失败时安装器以非零码中止。
+- `package:mac`：arm64 DMG，内含 `Virealm.app`。
+
+`set-version` 把版本写入本目录的 `package.json`，打包后的应用版本随之改变。
+tag 触发的发布流水线、冒烟脚本与未签名限制见
+[docs/release.md](../../docs/release.md)。
 
 在 macOS 上打包还需要 `pnpm` 出现在 `PATH`（例如 `corepack enable pnpm`），否则
 `electron-builder` 会以 `spawn pnpm ENOENT` 失败。

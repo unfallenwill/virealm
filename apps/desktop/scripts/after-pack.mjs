@@ -12,6 +12,10 @@ import path from "node:path";
 // Program Files produces.
 const ALL_APPLICATION_PACKAGES = "*S-1-15-2-1";
 
+// NSIS does not preserve this ACL when it extracts the installer, so
+// build-resources/installer.nsh grants the same ACE again on $INSTDIR. Keep the
+// two in sync if the required rights ever change.
+
 // Mach-O magic numbers: 32/64-bit, both byte orders, plus the universal header.
 const MACH_O_MAGIC = new Set([
   0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe,

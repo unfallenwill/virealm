@@ -119,8 +119,12 @@ macOS 的 `managed` 不提供文件或网络限制：子进程继承用户权限
   由内核保证）。桌面正常退出会显式终止环境。
 - macOS 的进程组可以被 `setsid` 或双 fork 逃逸；这不是可修复的实现缺口，而是
   `managed` 层级的定义。
-- macOS 产物未签名、未公证，跨机分发会被 Gatekeeper 拦截；只验证了本机
-  Apple silicon。
+- Windows NSIS 安装器未签名，SmartScreen 可能拦截。安装器在 `customInstall`
+  中为 `$INSTDIR` 递归授予 `ALL APPLICATION PACKAGES` 读/执行权限；这是
+  Electron 沙箱渲染进程读取应用目录的必要条件，范围仅限安装目录，不包含
+  用户数据。
+- macOS DMG 与其中的 `.app` 未签名、未公证，跨机分发会被 Gatekeeper 拦截；
+  只验证了本机 Apple silicon。
 - ETW 目前标记为 `not_verified`，尚未作为运行时诊断来源。
 - Chrome 二进制来源校验（签名、版本、更新通道）。
 - AppContainer Profile 按环境复用，但删除只在显式调用时发生；桌面端的「删除

@@ -1,0 +1,203 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "X.Y.Z：只构建并上传 artifact，不创建 Release"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+jobs:
+  prepare:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - name: Validate the tag or dispatch input
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            if [[ "$GITHUB_REF_NAME" != v* ]]; then
+              echo "::error::tag $GITHUB_REF_NAME must start with v"
+              exit 1
+            fi
+            version="${GITHUB_REF_NAME#v}"
+            publish=true
+          else
+            version="$INPUT_VERSION"
+            publish=false
+          fi
+
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::version $version must be X.Y.Z (no leading zeros, no pre-release suffix)"
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "Building Virealm $version (publish=$publish)"
+
+  windows:
+    name: Windows NSIS installer
+    needs: prepare
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Require an x64 runner
+        shell: pwsh
+        run: |
+          if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64") {
+            throw "expected an x64 Windows runner, got $env:PROCESSOR_ARCHITECTURE"
+          }
+      - run: pnpm install --frozen-lockfile
+      - run: cargo build --release --locked -p virealm-process-runtime --bin virealm-runtime
+      - run: pnpm contracts:build
+      - run: pnpm runtime-client:build
+      - run: pnpm adapter:build
+      - run: pnpm desktop:build
+      - name: Set the packaged version
+        run: pnpm --filter @virealm/desktop run set-version "${{ needs.prepare.outputs.version }}"
+      - name: Build the NSIS installer
+        run: pnpm --filter @virealm/desktop run package:win
+      - name: Install silently and verify the installed app
+        shell: pwsh
+        run: ./apps/desktop/scripts/verify-installer.ps1 -ExpectedVersion "${{ needs.prepare.outputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: apps/desktop/release/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    name: macOS DMG
+    needs: prepare
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Require an arm64 runner
+        run: test "$(uname -m)" = "arm64"
+      - run: pnpm install --frozen-lockfile
+      - run: cargo build --release --locked -p virealm-process-runtime --bin virealm-runtime
+      - run: pnpm contracts:build
+      - run: pnpm runtime-client:build
+      - run: pnpm adapter:build
+      - run: pnpm desktop:build
+      - name: Set the packaged version
+        run: pnpm --filter @virealm/desktop run set-version "${{ needs.prepare.outputs.version }}"
+      - name: Build the DMG
+        run: pnpm --filter @virealm/desktop run package:mac
+      - name: Mount and verify the DMG
+        run: bash apps/desktop/scripts/verify-dmg.sh apps/desktop/release "${{ needs.prepare.outputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: apps/desktop/release/*.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs: [prepare, windows, macos]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mapfile -t exes < <(find dist -type f -name '*.exe')
+          mapfile -t dmgs < <(find dist -type f -name '*.dmg')
+          if [[ ${#exes[@]} -ne 1 || ${#dmgs[@]} -ne 1 ]]; then
+            echo "::error::expected one .exe and one .dmg, found ${#exes[@]} and ${#dmgs[@]}"
+            find dist -type f -print
+            exit 1
+          fi
+
+          expected_exe="Virealm-${VERSION}-win-x64.exe"
+          expected_dmg="Virealm-${VERSION}-mac-arm64.dmg"
+          if [[ "$(basename "${exes[0]}")" != "$expected_exe" ]]; then
+            echo "::error::unexpected installer name: $(basename "${exes[0]}")"
+            exit 1
+          fi
+          if [[ "$(basename "${dmgs[0]}")" != "$expected_dmg" ]]; then
+            echo "::error::unexpected DMG name: $(basename "${dmgs[0]}")"
+            exit 1
+          fi
+
+          files=("${exes[0]}" "${dmgs[0]}")
+          for file in "${files[@]}"; do
+            if [[ ! -s "$file" ]]; then
+              echo "::error::asset is empty: $file"
+              exit 1
+            fi
+          done
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; replacing its assets"
+            gh release upload "$TAG" "${files[@]}" --clobber
+          else
+            gh release create "$TAG" "${files[@]}" \
+              --title "Virealm $VERSION" \
+              --notes-file .github/release-notes.md \
+              --verify-tag \
+              --latest
+          fi

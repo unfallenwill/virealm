@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "private": true,
   "description": "Virealm desktop application: manage isolated Chrome environments.",
+  "author": "unfallenwill",
+  "license": "MIT",
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
@@ -18,7 +20,10 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:electron": "vitest run --config vitest.integration.config.ts --dir tests/electron",
-    "package": "electron-builder"
+    "package": "electron-builder",
+    "package:win": "electron-builder --win nsis --x64 --publish never",
+    "package:mac": "electron-builder --mac dmg --arm64 --publish never",
+    "set-version": "node scripts/set-version.mjs"
   },
   "dependencies": {
     "@virealm/browser-adapter": "workspace:*",
@@ -50,7 +55,8 @@
     "productName": "Virealm",
     "afterPack": "scripts/after-pack.mjs",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build-resources"
     },
     "files": [
       "dist/**/*",
@@ -77,12 +83,19 @@
         }
       ],
       "identity": null,
+      "artifactName": "Virealm-${version}-mac-${arch}.${ext}",
       "extraResources": [
         {
           "from": "../../target/release/virealm-runtime",
           "to": "runtime/virealm-runtime"
         }
       ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "include": "installer.nsh",
+      "artifactName": "Virealm-${version}-win-${arch}.${ext}"
     }
   }
 }

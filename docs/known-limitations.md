@@ -89,6 +89,8 @@ macOS 的 `managed` 使用 POSIX 进程组：创建 Chrome 时通过 `process_gr
 - ETW 观察与事件关联：探测状态为 `not_verified`，实现中未使用。
 - 额外的进程缓解策略（ACG、CIG、字体/图像阻断等）：只读取当前策略，不主动设置。
 - 可执行文件签名、发布者与版本校验。
+- 安装器代码签名、macOS 公证与自动更新。
+- 安装包与 `.app` 使用 Electron 默认图标；根 `LICENSE` 文本没有随应用打包。
 - 宿主崩溃后的孤儿进程扫描；依赖 Job 的 `killOnClose` 在句柄关闭时终止。
 - 进程监督、自动重启、退避与健康检查。
 - 账号体系、云同步、远程浏览器、计费、插件市场与多租户。
@@ -105,19 +107,22 @@ macOS 的 `managed` 使用 POSIX 进程组：创建 Chrome 时通过 `process_gr
 - Windows CI（`.github/workflows/ci.yml`）的实跑结果记录在
   `docs/test-report.md`；macOS job 与 macOS 打包 job 已加入工作流，其中打包 job
   暂时是非阻塞（`continue-on-error`），需要 CI 实跑后再转为门禁。
+- tag 触发的发布工作流在 `.github/workflows/release.yml`，流程见
+  `docs/release.md`。Windows NSIS 与 macOS DMG 的静默安装/挂载冒烟测试在首个
+  dry run 或正式 tag 前未实跑。
 - Chrome 兼容性测试需要本机安装 Chrome；Windows 本机使用 Chrome 156.0.8078.48，
   macOS 本机使用 Chrome 155.0.8059.85。Chrome 在 AppContainer 下运行所需的额外
   授权**已实测失败**：`ALL APPLICATION PACKAGES` 对 `C:\Program Files` 已经
   授予 RX 且子目录继承 GR/GE，额外授权是冗余的；真正的障碍是 Chromium 无法在
   受限令牌内启动自己的沙箱（见 §1.1）。
-- Windows 打包产物以 `dir` 目标产出，尚未生成安装器（NSIS/MSI）。安装目录需要
-  `ALL APPLICATION PACKAGES` 只读权限，`apps/desktop/scripts/after-pack.mjs`
-  会在打包后授予；若目标目录继承自带有 AppContainer 包 SID 的目录，缺少该
-  授权会让沙箱渲染进程拒绝启动。
-- macOS 打包产物同样以 `dir` 目标产出（`Virealm.app`，arm64），未签名、未公证。
-  `after-pack` 只校验 Mach-O、设置可执行位并确认运行时被打进
-  `Contents/Resources/runtime/`；跨机分发需要开发者签名与公证，不在当前范围。
-  打包后的 `.app` 与已运行的同名应用共用单实例锁，无法同时启动两个实例。
+- 本地 `desktop:package` 仍以 `dir` 目标产出（Windows `win-unpacked`、macOS
+  `Virealm.app`）。发布流水线生成 Windows x64 NSIS 安装器与 macOS arm64 DMG；
+  两者都未签名。Windows 安装器在 `customInstall` 中为 `$INSTDIR` 递归授予
+  `ALL APPLICATION PACKAGES` 只读权限（NSIS 不保留 `after-pack` 的 ACL），
+  授权失败会中止安装；macOS 首次启动会被 Gatekeeper 拦截，需要右键打开。
+- 安装器仅覆盖 Windows x64 与 macOS arm64；没有 MSI、Windows ARM64、macOS
+  Intel/Universal，也没有自动更新。发布工作流在首个 dry run/tag 前未实跑。
+- 打包后的 `.app` 与已运行的同名应用共用单实例锁，无法同时启动两个实例。
 - macOS 运行时默认地址 `$TMPDIR/virealm-runtime-v2.sock` 受 `sun_path` 104 字节
   限制（实现要求 ≤100 字节）；桌面端在 `$TMPDIR` 过长时回退到 `/tmp`。用户直接
   调用 `serve --pipe` 时，过长的路径会得到明确错误。

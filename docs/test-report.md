@@ -2,7 +2,7 @@
 
 日期：2026-10-24（Windows）与 2026-10-26（macOS）。所有结果来自对应机器上的实际
 执行，未使用 mock 或伪造输出；被跳过的测试在第 6 节与第 8.6 节逐条列出。第 1–7
-节是 Windows 记录，第 8 节是 macOS 记录。
+节是 Windows 记录，第 8 节是 macOS 记录，第 9 节是发布流水线的本机 macOS 验证。
 
 ## 1. 环境
 
@@ -463,3 +463,112 @@ CI 的 Windows 作业本次**未观察**新运行结果；「Windows 未破坏�
 - 打包 `.app` 与已运行的同名应用共用单实例锁：本机运行着开发版 Electron 时，
   打包版启动后立即退出。本次没有结束该开发进程；socket 生命周期与清理由单元
   测试覆盖，未在打包版上重复验证第二次启动。
+
+## 9. 发布流水线（2026-10-26，macOS 本机）
+
+本次实际验证了 macOS arm64 DMG；Windows NSIS 安装器、PowerShell 冒烟脚本与
+GitHub Actions 工作流**没有实跑**，它们只能在 Windows 或 CI 上验证。
+
+### 9.1 本机 DMG 构建
+
+环境：macOS 27.0.1 arm64，Electron 45.0.0，electron-builder 26.15.3，
+Node 24，pnpm 12.15.0（经 corepack）。构建前执行了 `contracts:build`、
+`runtime-client:build`、`adapter:build`、`desktop:build` 与
+`cargo build --release -p virealm-process-runtime --bin virealm-runtime`。
+
+命令：
+
+```bash
+corepack pnpm --filter @virealm/desktop run package:mac
+```
+
+结果：通过，产出 `apps/desktop/release/Virealm-0.1.0-mac-arm64.dmg`
+（126 MB）及 `.dmg.blockmap`。`after-pack` 再次确认
+`Virealm.app/Contents/Resources/runtime/virealm-runtime` 存在并设置可执行位。
+
+本机没有全局 `pnpm`，electron-builder 会直接 `spawn pnpm` 收集 workspace
+依赖；第一次构建因此以 `spawn pnpm ENOENT` 失败。用一个临时的 `pnpm`
+PATH shim（内部执行 `corepack pnpm`）后构建通过。CI 使用
+`pnpm/action-setup`，不需要该 shim；本地 macOS 构建需要按
+`docs/development.md` 让 `pnpm` 出现在 `PATH`。
+
+### 9.2 DMG 冒烟
+
+命令：
+
+```bash
+bash apps/desktop/scripts/verify-dmg.sh apps/desktop/release 0.1.0
+```
+
+实际输出：
+
+```text
+[verify-dmg] Virealm-0.1.0-mac-arm64.dmg contains a runnable runtime and version 0.1.0
+```
+
+脚本实际核对了：只匹配到目标版本的 DMG、只读挂载成功、`Virealm.app` 与
+`Contents/MacOS/Virealm` 存在且可执行、随包运行时为 Mach-O 且可执行、
+`CFBundleIdentifier=com.virealm.desktop`、运行时 `probe` 报告
+`platform.os=macos` 且 `processGroup.state=supported`、
+`CFBundleShortVersionString=0.1.0`。验证结束后用 `hdiutil info` 确认没有
+残留挂载。初次运行旧版脚本时镜像在退出后仍挂载，已把清理改为
+`hdiutil detach -force` 并复跑通过；该改动不影响验证结论。
+
+没有启动打包后的 `.app`：本机开发版 Electron 持有同名应用的单实例锁，启动
+打包版会立即退出；应用启动路径已有第 8 节的现有记录，本次不重复。
+
+### 9.3 版本注入
+
+`set-version.mjs` 的往返验证：
+
+- `9.9.9`：写入成功，读回 `9.9.9`；
+- `0.1.0`：恢复成功，读回 `0.1.0`；
+- `1.2` 与 `v1.2.3`：均以非零码拒绝，输出 usage，未修改文件。
+
+因此发布工作流可以在打包前把 tag 版本注入 `apps/desktop/package.json`，
+而不需要提交版本变更。
+
+### 9.4 静态检查
+
+| 检查 | 结果 |
+| --- | --- |
+| `corepack pnpm check` | 通过（Rust 87 个测试；contracts 86、runtime-client 26、adapter 261、desktop 254 个测试） |
+| `prettier --check`（package.json、新脚本、workflow、release notes、release.md） | 通过 |
+| `pnpm desktop:lint` | 通过 |
+| `pnpm desktop:format:check` | 通过 |
+| `pnpm desktop:typecheck` | 通过 |
+| `ruby -e 'YAML.load_file(".github/workflows/release.yml")'` | 通过 |
+| `node --check apps/desktop/scripts/set-version.mjs` | 通过 |
+| 两个 `package.json` 的 `JSON.parse` | 通过 |
+| `bash -n apps/desktop/scripts/verify-dmg.sh` | 通过 |
+
+全量门禁第一次运行时，macOS socket 自测在并行测试中互相删除同一个
+PID 命名路径，分别以 `EEXIST` 与 `ENOENT` 失败。已用进程内 `Mutex` 串行化
+`selftest()` 的 bind/connect/cleanup 序列（不改变运行时隔离行为），随后
+`cargo test --workspace` 与完整 `pnpm check` 均通过。
+
+本机没有安装 `actionlint`、`pwsh` 或 `shellcheck`，因此没有运行它们；
+`verify-installer.ps1` 与 `installer.nsh` 的语法和运行时行为都没有在本机
+验证。
+
+### 9.5 未验证的部分
+
+- **Windows NSIS**：本机是 macOS，没有构建安装器，也没有执行
+  `verify-installer.ps1`。安装目录继承 ACL、`DisplayVersion`、`app.asar`
+  与运行时 `probe` 等断言只能由 Windows CI 验证。
+- **发布工作流**：没有推送 tag，也没有触发 `workflow_dispatch`；只做了 YAML
+  解析。首次正式 tag 前应先从 `main` 跑一次 `workflow_dispatch`。
+- **签名与公证**：两个平台的产物都未签名；Windows SmartScreen 与 macOS
+  Gatekeeper 的拦截行为没有在本机或 CI 实跑。
+- 两个平台的安装包都没有使用自定义图标；应用内也没有额外打包根 `LICENSE`
+  文本。
+
+### 9.6 发布流水线限制
+
+- 仅 Windows x64 NSIS 与 macOS arm64 DMG；没有 MSI、Windows ARM64、
+  macOS Intel/Universal。
+- 没有自动更新、代码签名、公证或发布后回滚自动化。
+- 工作流不重跑单元/集成测试；tag 应指向已通过 `pnpm check` 的 `main` 提交。
+- `publish` job 会断言资产名恰为
+  `Virealm-<version>-win-x64.exe` / `Virealm-<version>-mac-arm64.dmg`，并拒绝
+  空文件；已有 Release 只替换资产，不改写说明。

@@ -19,7 +19,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::ipc::{RuntimeState, handle_connection};
@@ -68,8 +68,16 @@ pub(crate) fn serve(address: &str) -> io::Result<()> {
     }
 }
 
+/// Probes can run concurrently (the test harness does), and every call in one
+/// process uses the same PID-based path. Serialize the bind/connect/cleanup
+/// sequence so one call cannot unlink another call's socket mid-test.
+static SELFTEST_LOCK: Mutex<()> = Mutex::new(());
+
 /// Exercise bind, connect and peer credentials in a temporary path.
 pub(crate) fn selftest() -> io::Result<()> {
+    let _guard = SELFTEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let path = env::temp_dir().join(format!(
         "virealm-runtime-selftest-{}.sock",
         std::process::id()

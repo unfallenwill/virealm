@@ -55,14 +55,18 @@ corepack pnpm desktop:test
 corepack pnpm desktop:build
 corepack pnpm desktop:test:integration
 corepack pnpm desktop:package
+corepack pnpm desktop:package:win
+corepack pnpm desktop:package:mac
+corepack pnpm --filter @virealm/desktop run set-version 0.1.0
 ```
 
 `desktop:test:integration` 需要 Windows 或 macOS、已构建的 `virealm-runtime`
 与本机 Chrome；缺少前置条件时该文件会整体跳过并在输出中说明原因，设置
 `VIREALM_REQUIRE_INTEGRATION=1` 则改为失败。
 
-`desktop:package` 需要先执行 `cargo build --release -p virealm-process-runtime
---bin virealm-runtime`。打包脚本按平台选择运行时文件名与资源目录：
+所有打包命令都需要先执行 `cargo build --release -p virealm-process-runtime
+--bin virealm-runtime`。`desktop:package` 仍使用 `dir` 目标，按平台选择运行时
+文件名与资源目录：
 
 - Windows：`target/release/virealm-runtime.exe` → `resources/runtime/`，产出
   `apps/desktop/release/win-unpacked`；
@@ -70,6 +74,20 @@ corepack pnpm desktop:package
   `Virealm.app/Contents/Resources/runtime/`，产出
   `apps/desktop/release/mac-arm64/Virealm.app`，`after-pack` 会校验 Mach-O 并
   设置可执行位。
+
+安装器由 `desktop:package:win` / `desktop:package:mac` 构建，只能在对应平台
+运行：
+
+- Windows：NSIS x64 一键安装器，安装到 `%LOCALAPPDATA%\Programs\Virealm`。
+  NSIS 解包不保留 `after-pack` 设置的 ACL，因此
+  `apps/desktop/build-resources/installer.nsh` 在 `customInstall` 中为
+  `$INSTDIR` 递归授予 `ALL APPLICATION PACKAGES` 只读权限；缺少该权限时
+  Electron 的沙箱渲染进程拒绝启动。
+- macOS：arm64 DMG，内含未签名、未公证的 `Virealm.app`。
+
+`set-version` 把严格三段版本写入 `apps/desktop/package.json`；发布工作流在
+打包前用 tag 版本调用它。完整的 tag 触发、自动发布与演练流程见
+[release.md](release.md)。
 
 在 macOS 上，`electron-builder` 会直接调用名为 `pnpm` 的可执行文件来收集
  workspace 依赖；只用 `corepack pnpm` 而没有全局 `pnpm` 时，需要先让 `pnpm`
