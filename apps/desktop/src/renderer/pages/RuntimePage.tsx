@@ -5,6 +5,7 @@ import type {
   IsolationCapabilityView,
   RuntimeStatusView,
 } from "../../shared/contracts.js";
+import { isMacosPlatform } from "../../shared/isolation.js";
 import { Button } from "../components/Button.js";
 import { Icon } from "../components/Icon.js";
 import { InlineAlert } from "../components/InlineAlert.js";
@@ -21,14 +22,31 @@ const CAPABILITY_COPY: Readonly<
   not_verified: { label: "未验证", tone: "" },
 };
 
-const ISOLATION_EXPLANATION: Readonly<Record<string, string>> = {
-  managed:
-    "把由运行时启动的 Chrome 进程树纳入 Job Object。它能保证退出时清理受管进程，但不改变账户权限。",
-  restricted:
-    "使用降权的受限令牌启动 Chrome。能减少对用户会话资源的访问，但可能影响依赖完整用户配置的功能。",
-  app_container:
-    "使用 AppContainer 与目录 ACL 限制文件系统与网络访问。隔离更强，但需要系统与运行时同时支持，兼容性最严格。",
-};
+function isolationExplanation(
+  mode: string,
+  platformOs: string | undefined,
+): string {
+  if (mode === "managed") {
+    return isMacosPlatform(platformOs)
+      ? "把由运行时启动的 Chrome 及其受管子进程放进同一 POSIX 进程组；停止或退出时向整组发送终止信号。它不是文件或网络沙箱。"
+      : "把由运行时启动的 Chrome 进程树纳入 Job Object。它能保证退出时清理受管进程，但不改变账户权限。";
+  }
+  if (mode === "restricted") {
+    return isMacosPlatform(platformOs)
+      ? "使用降权的受限令牌启动进程。该模式只在 Windows 上实现；macOS 运行时不会模拟或降级。"
+      : "使用降权的受限令牌启动 Chrome。能减少对用户会话资源的访问，但可能影响依赖完整用户配置的功能。";
+  }
+  if (mode === "app_container") {
+    return isMacosPlatform(platformOs)
+      ? "使用 AppContainer 与目录 ACL 限制文件系统与网络访问。该模式只在 Windows 上实现；macOS 运行时不会模拟或降级。"
+      : "使用 AppContainer 与目录 ACL 限制文件系统与网络访问。隔离更强，但需要系统与运行时同时支持，兼容性最严格。";
+  }
+  return "";
+}
+
+function endpointLabel(platformOs: string | undefined): string {
+  return isMacosPlatform(platformOs) ? "Unix 套接字" : "命名管道";
+}
 
 export interface RuntimePageProps {
   readonly runtime: RuntimeStatusView | undefined;
@@ -90,7 +108,7 @@ export function RuntimePage({
                 </div>
                 <p className="runtime-status-copy">
                   {runtime.available
-                    ? "环境的状态查询、启动、停止与能力检测都通过这个本地命名管道完成。浏览器启动本身仍由 Browser Adapter 执行。"
+                    ? `环境的状态查询、启动、停止与能力检测都通过这个本地连接（${endpointLabel(runtime.platform?.os)}）完成。浏览器启动本身仍由 Browser Adapter 执行。`
                     : "桌面应用无法连接运行时，因此不能启动或停止 Chrome。已有环境记录仍可查看和编辑；修复运行时后可直接重试，无需重启应用。"}
                 </p>
                 {runtime.error === undefined ? null : (
@@ -121,7 +139,10 @@ export function RuntimePage({
                     label="可执行文件"
                     value={runtime.executablePath ?? "未找到"}
                   />
-                  <Fact label="命名管道" value={runtime.pipePath} />
+                  <Fact
+                    label={endpointLabel(runtime.platform?.os)}
+                    value={runtime.pipePath}
+                  />
                   <Fact
                     label="最近检测"
                     value={formatDateTime(runtime.checkedAtUnixMs)}
@@ -131,7 +152,11 @@ export function RuntimePage({
                     value={
                       runtime.platform === undefined
                         ? "—"
-                        : `${runtime.platform.os} / ${runtime.platform.architecture}`
+                        : `${runtime.platform.os} / ${runtime.platform.architecture}${
+                            runtime.platform.osVersion === undefined
+                              ? ""
+                              : ` / ${runtime.platform.osVersion}`
+                          }`
                     }
                   />
                   <Fact
@@ -163,7 +188,7 @@ export function RuntimePage({
                   <div className="kv__row">
                     <div className="kv__key">不可用</div>
                     <div className="kv__value">
-                      找不到可执行文件、管道未建立或运行时进程已退出。
+                      找不到可执行文件、本地连接未建立或运行时进程已退出。
                     </div>
                   </div>
                   <div className="kv__row">
@@ -176,8 +201,7 @@ export function RuntimePage({
                 <p className="form-note">
                   <Icon name="info" size={13} />
                   <span>
-                    运行时与服务端并非云服务。它只在这台 Windows
-                    机器上运行，管道按应用实例隔离。
+                    运行时与服务端并非云服务。它只在这台电脑上运行，本地连接按应用实例隔离。
                   </span>
                 </p>
               </div>
@@ -199,6 +223,7 @@ export function RuntimePage({
                   <CapabilityRow
                     key={capability.mode}
                     capability={capability}
+                    platformOs={runtime.platform?.os}
                   />
                 ))
               )}
@@ -219,7 +244,7 @@ export function RuntimePage({
                   (mode) => (
                     <div key={mode}>
                       <div className="runtime-fact__label">
-                        {isolationLabel(mode)}
+                        {isolationLabel(mode, runtime.platform?.os)}
                       </div>
                       <div
                         style={{
@@ -229,7 +254,7 @@ export function RuntimePage({
                           lineHeight: 1.55,
                         }}
                       >
-                        {ISOLATION_EXPLANATION[mode]}
+                        {isolationExplanation(mode, runtime.platform?.os)}
                       </div>
                     </div>
                   ),
@@ -262,15 +287,17 @@ function Fact({
 
 function CapabilityRow({
   capability,
+  platformOs,
 }: {
   readonly capability: IsolationCapabilityView;
+  readonly platformOs: string | undefined;
 }): JSX.Element {
   const copy = CAPABILITY_COPY[capability.state];
   return (
     <div className="capability-row">
       <div>
         <div className="capability-row__name">
-          {isolationLabel(capability.mode)}
+          {isolationLabel(capability.mode, platformOs)}
         </div>
         <div
           className="mono"

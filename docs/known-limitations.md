@@ -5,13 +5,15 @@
 
 ## 1. 隔离强度
 
-- `managed` 不是沙箱。子进程使用调用方令牌，拥有调用方的文件、网络与注册表
-  访问权限；Job Object 只约束生命周期与部分资源。
-- `restricted` 只移除特权并降低到 Low 完整性。它不按路径限制文件，也不限制
-  网络；`networkAccess: deny` 与 `fileAccess: restricted` 在该模式下会被拒绝。
-- `app_container` 的文件隔离是**目录级 ACL**：授予数据目录、数据目录下的
-  `Temp` 与显式额外根目录，其余路径依赖 AppContainer 默认拒绝。它不提供单文件
-  白名单、不拦截已授权目录内的任意读写。
+- `managed` 不是沙箱。Windows 上子进程使用调用方令牌，拥有调用方的文件、网络
+  与注册表访问权限，Job Object 只约束生命周期与部分资源；macOS 上子进程使用
+  当前 UID，进程组只约束生命周期（见 §1.2）。
+- `restricted`（Windows）只移除特权并降低到 Low 完整性。它不按路径限制文件，
+  也不限制网络；`networkAccess: deny` 与 `fileAccess: restricted` 在该模式下会
+  被拒绝。
+- `app_container`（Windows）的文件隔离是**目录级 ACL**：授予数据目录、数据
+  目录下的 `Temp` 与显式额外根目录，其余路径依赖 AppContainer 默认拒绝。它不
+  提供单文件白名单、不拦截已授权目录内的任意读写。
 - `app_container` 的网络隔离是**能力级**的（是否附加 `internetClient` 等
   capability SID），不是域名、端口或协议级防火墙。`deny` 不附加网络能力，
   但没有实现按目标地址过滤。
@@ -56,12 +58,39 @@ Chromium 的 `CHECK` 中止，进程在启动阶段退出，不写入任何 Prof
 - 真正可用的隔离路径是 `managed`（Job Object 生命周期与资源约束）加上浏览器层
   的配置覆盖（时区、语言、视口）。这两者都不是操作系统级的指纹隔离。
 
+### 1.2 macOS：进程组不是沙箱（已实测）
+
+macOS 的 `managed` 使用 POSIX 进程组：创建 Chrome 时通过 `process_group(0)`
+进入独立进程组，`getpgid` 回验，`proc_pidinfo` 校验 PID + 启动时间身份；停止、
+显式终止与运行时正常退出都会向整组发 `SIGKILL`。
+
+它**不提供**：
+
+- 文件系统或网络限制：Chrome 以当前用户身份运行，可访问用户可访问的一切。
+- 按进程树聚合的进程数 / 内存上限：没有对应原语，配置了
+  `maxProcesses` / `memoryLimitBytes` 的请求会以 `capability_unavailable`
+  被拒绝，不用 `RLIMIT` 近似。
+- 内核级 kill-on-close：进程组依赖运行时进程执行清理。运行时被 `SIGKILL` 时
+  内核不会代为杀树，Chrome 可能残留；Windows 的 Job Object 有这一保证。
+- 强制包含：子进程可以 `setsid` 或双 fork 离开进程组。`managed` 的定义就是
+  生命周期包含，不是安全边界。
+- `restricted` / `app_container`：这两个模式是 Windows 专属，macOS 运行时会
+  在创建进程前以 `capability_unavailable` 拒绝，桌面端在保存/启动时给出可读
+  原因。
+
+实测观察（macOS 27.0.1 arm64、Chrome 155.0.8059.85）：Chrome 正常浏览器进程与
+其大多数受管 helper 同组；Crashpad handler 可能加入用户已有 Chrome 的进程组
+而不是新环境的进程组。因此「整组终止」覆盖浏览器主进程与 CDP 所需进程，但不
+应描述成「保证每一个 Chromium 子进程都不会残留」。集成测试按
+`--user-data-dir` 过滤残留进程，未发现环境自己的 Chrome 残留。
 
 ## 2. 未实现的能力
 
 - ETW 观察与事件关联：探测状态为 `not_verified`，实现中未使用。
 - 额外的进程缓解策略（ACG、CIG、字体/图像阻断等）：只读取当前策略，不主动设置。
 - 可执行文件签名、发布者与版本校验。
+- 安装器代码签名、macOS 公证与自动更新。
+- 安装包与 `.app` 使用 Electron 默认图标；根 `LICENSE` 文本没有随应用打包。
 - 宿主崩溃后的孤儿进程扫描；依赖 Job 的 `killOnClose` 在句柄关闭时终止。
 - 进程监督、自动重启、退避与健康检查。
 - 账号体系、云同步、远程浏览器、计费、插件市场与多租户。
@@ -70,18 +99,33 @@ Chromium 的 `CHECK` 中止，进程在启动阶段退出，不写入任何 Prof
 
 ## 3. 平台与兼容性
 
-- 只在 Windows 11 26300 x86_64、非管理员、Medium 完整性下验证。
-  未在 Windows 10 早期构建、Windows Server、ARM64 或高完整性/管理员会话中验证。
-- 未在 Windows CI 上运行。`docs/test-report.md` 中的结果全部来自单台开发机；
-  CI 工作流已写好（`.github/workflows/ci.yml`），但没有实际执行记录。
-- Chrome 兼容性测试需要本机安装 Chrome；本机使用 Chrome 156.0.8078.48。
-  Chrome 在 AppContainer 下运行所需的额外授权**已实测失败**：`ALL APPLICATION
-  PACKAGES` 对 `C:\Program Files` 已经授予 RX 且子目录继承 GR/GE，额外授权是
-  冗余的；真正的障碍是 Chromium 无法在受限令牌内启动自己的沙箱（见 §1.1）。
-- 打包产物以 `dir` 目标产出，尚未生成安装器（NSIS/MSI）。安装目录需要
-  `ALL APPLICATION PACKAGES` 只读权限，`apps/desktop/scripts/after-pack.mjs`
-  会在打包后授予；若目标目录继承自带有 AppContainer 包 SID 的目录，缺少该
-  授权会让沙箱渲染进程拒绝启动。
+- Windows 只在 11 26300 x86_64、非管理员、Medium 完整性下验证；未在 Windows 10
+  早期构建、Windows Server、ARM64 或高完整性/管理员会话中验证。
+- macOS 只在 27.0.1 arm64 上验证；未在 Intel Mac、旧版 macOS 或 Rosetta 下验证。
+  代码不依赖具体版本号，但 `proc_pidinfo` 与 `LOCAL_PEERCRED` 的实测证据只来自
+  这一台机器。
+- Windows CI（`.github/workflows/ci.yml`）的实跑结果记录在
+  `docs/test-report.md`；macOS job 与 macOS 打包 job 已加入工作流，其中打包 job
+  暂时是非阻塞（`continue-on-error`），需要 CI 实跑后再转为门禁。
+- tag 触发的发布工作流在 `.github/workflows/release.yml`，流程见
+  `docs/release.md`。Windows NSIS 与 macOS DMG 的静默安装/挂载冒烟测试在首个
+  dry run 或正式 tag 前未实跑。
+- Chrome 兼容性测试需要本机安装 Chrome；Windows 本机使用 Chrome 156.0.8078.48，
+  macOS 本机使用 Chrome 155.0.8059.85。Chrome 在 AppContainer 下运行所需的额外
+  授权**已实测失败**：`ALL APPLICATION PACKAGES` 对 `C:\Program Files` 已经
+  授予 RX 且子目录继承 GR/GE，额外授权是冗余的；真正的障碍是 Chromium 无法在
+  受限令牌内启动自己的沙箱（见 §1.1）。
+- 本地 `desktop:package` 仍以 `dir` 目标产出（Windows `win-unpacked`、macOS
+  `Virealm.app`）。发布流水线生成 Windows x64 NSIS 安装器与 macOS arm64 DMG；
+  两者都未签名。Windows 安装器在 `customInstall` 中为 `$INSTDIR` 递归授予
+  `ALL APPLICATION PACKAGES` 只读权限（NSIS 不保留 `after-pack` 的 ACL），
+  授权失败会中止安装；macOS 首次启动会被 Gatekeeper 拦截，需要右键打开。
+- 安装器仅覆盖 Windows x64 与 macOS arm64；没有 MSI、Windows ARM64、macOS
+  Intel/Universal，也没有自动更新。发布工作流在首个 dry run/tag 前未实跑。
+- 打包后的 `.app` 与已运行的同名应用共用单实例锁，无法同时启动两个实例。
+- macOS 运行时默认地址 `$TMPDIR/virealm-runtime-v2.sock` 受 `sun_path` 104 字节
+  限制（实现要求 ≤100 字节）；桌面端在 `$TMPDIR` 过长时回退到 `/tmp`。用户直接
+  调用 `serve --pipe` 时，过长的路径会得到明确错误。
 - AppContainer Profile 按环境标识复用；删除需要显式调用，尚未与环境删除流程
   集成。失败启动可能留下临时 Profile 或 ACL 条目（探测用临时 Profile 会删除）。
 - AppContainer 进程只能执行容器可读取的二进制；程序目录不在数据目录内时，
@@ -89,8 +133,11 @@ Chromium 的 `CHECK` 中止，进程在启动阶段退出，不写入任何 Prof
 
 ## 4. 桌面应用的限制
 
-- 打包版本固定使用系统提供的用户数据目录（`%APPDATA%\Virealm`），不接受
+- 打包版本固定使用系统提供的用户数据目录（Windows 为 `%APPDATA%\Virealm`，
+  macOS 为 `~/Library/Application Support/Virealm`），不接受
   `VIREALM_USER_DATA_DIR` 覆盖；该覆盖只对未打包的开发与测试构建生效。
+- macOS 与 Windows 都采用「关闭窗口即退出」：这样运行时与 Chrome 会被清理。
+  这是对 macOS 常驻菜单栏约定的有意偏离。
 - 桌面端只管理**本机**环境，不提供远程控制或多机编排。
 - 环境元数据保存在单个 JSON 文件中，没有数据库；单文件规模下足够，但不适合
   大量环境。
@@ -112,6 +159,11 @@ Chromium 的 `CHECK` 中止，进程在启动阶段退出，不写入任何 Prof
   下的表现。
 - Electron 端到端测试只覆盖创建环境与重启恢复；启动 / 停止真实 Chrome 的界面
   路径由服务层集成测试覆盖，未在 Electron 内点击「启动」按钮做端到端验证。
+- macOS 未做进程组逃逸的对抗性测试（子进程主动 `setsid`），也未测试运行时被
+  `SIGKILL` 后 Chrome 的残留行为；这两点按设计是已知缺口，不是待验证的「可能
+  可用」能力。
+- macOS 的 `LOCAL_PEERCRED` 只验证了同用户本地连接路径，未测试其它 UID 或
+  沙箱内进程的连接尝试。
 - 未在受限令牌与 AppContainer 模式下做过桌面端的完整环境生命周期验证——这已由
   §1.1 证明**不可能**：Chromium 在这两种模式下无法启动，该路径由适配器的
   `unsupported_isolation` 覆盖，而不是由桌面端的生命周期测试覆盖。
@@ -125,6 +177,8 @@ Chromium 的 `CHECK` 中止，进程在启动阶段退出，不写入任何 Prof
   使用宽字符串，CLI 在 UTF-8 边界上转换。
 - 诊断事件只保留稳定代码与必要上下文，不持久化，也不包含完整环境变量、令牌或
   浏览器凭据。
-- 错误中的 `windowsError` 是诊断信息，不保证跨 Windows 版本语义稳定。
+- 错误中的 `windowsError`（Windows）与 `errno`（macOS）是诊断信息，不保证跨
+  系统版本语义稳定。`platform_failure` 必须带 `operation`，并恰好带其中一个
+  平台错误码。
 - 环境元数据文件与设置文件在写入失败时保留旧内容，但两者之间没有事务：极端
   情况下可能存在「设置已更新、环境记录未更新」的不一致，需要用户再次保存。

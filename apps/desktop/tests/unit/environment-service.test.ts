@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import {
   BrowserAdapterError,
   type BrowserEnvironmentConfig,
@@ -14,6 +16,7 @@ import {
 } from "../../src/main/services/environment-service.js";
 import { expectedProfileDir } from "../../src/main/services/profile-cleanup.js";
 import {
+  TEST_CHROME_PATH,
   TEST_DATA_ROOT,
   FakeAdapter,
   FakeCleanup,
@@ -25,6 +28,14 @@ import {
   stoppedStatus,
 } from "./helpers/fakes.js";
 
+const OTHER_CHROME_PATH = path.join(
+  TEST_DATA_ROOT,
+  "Chrome",
+  "other",
+  "chrome.exe",
+);
+const OUTSIDE_PROFILE = path.join(TEST_DATA_ROOT, "outside", "chrome-data");
+
 interface Harness {
   readonly service: DesktopEnvironmentService;
   readonly adapter: FakeAdapter;
@@ -34,7 +45,12 @@ interface Harness {
   readonly dataRoot: string;
 }
 
-function setup(options: { readonly ids?: readonly string[] } = {}): Harness {
+function setup(
+  options: {
+    readonly ids?: readonly string[];
+    readonly platform?: string;
+  } = {},
+): Harness {
   const dataRoot = TEST_DATA_ROOT;
   const adapter = new FakeAdapter();
   const store = new MemoryEnvironmentStore();
@@ -60,6 +76,7 @@ function setup(options: { readonly ids?: readonly string[] } = {}): Harness {
       return next;
     },
     verifyTimeoutMs: 3_000,
+    ...(options.platform === undefined ? {} : { platform: options.platform }),
   });
   return { service, adapter, store, cleanup, log, dataRoot };
 }
@@ -120,6 +137,28 @@ describe("DesktopEnvironmentService create", () => {
     },
   );
 
+  it("explains the macOS restriction instead of the Windows one", async () => {
+    const harness = setup({ platform: "darwin" });
+    const error: unknown = await harness.service
+      .create(draftFor({ runtimePolicy: { isolation: "restricted" } }))
+      .catch((cause: unknown) => cause);
+    expect(error).toMatchObject({
+      code: "unsupported_isolation",
+      details: { isolation: "restricted" },
+    });
+    expect((error as Error).message).toContain("进程组管理");
+  });
+
+  it("accepts the managed process group on macOS", async () => {
+    const harness = setup({ platform: "darwin" });
+    const view = await harness.service.create(draftFor());
+    expect(view).toMatchObject({
+      id: "env-created",
+      state: "stopped",
+      dataDir: expectedProfileDir(harness.dataRoot, "env-created"),
+    });
+  });
+
   it("rejects a configuration the adapter considers invalid", async () => {
     const harness = setup();
     harness.adapter.validation = {
@@ -170,7 +209,11 @@ describe("DesktopEnvironmentService create", () => {
     const harness = setup();
     harness.adapter.discovered = [];
     const view = await harness.service.create(
-      draftFor({ browser: { executablePath: "C:\\Missing\\chrome.exe" } }),
+      draftFor({
+        browser: {
+          executablePath: path.join(TEST_DATA_ROOT, "Missing", "chrome.exe"),
+        },
+      }),
     );
     expect(view.warnings).toContain(
       "指定的 Chrome 可执行文件不可用，请重新选择。",
@@ -339,7 +382,7 @@ describe("DesktopEnvironmentService update", () => {
     const result = await harness.service.update(
       "env-test",
       draftFor({
-        browser: { executablePath: "C:\\Chrome\\other\\chrome.exe" },
+        browser: { executablePath: OTHER_CHROME_PATH },
       }),
     );
 
@@ -380,7 +423,7 @@ describe("DesktopEnvironmentService update", () => {
       draftFor({
         name: "混合",
         timezone: "Europe/Berlin",
-        browser: { executablePath: "C:\\Chrome\\other\\chrome.exe" },
+        browser: { executablePath: OTHER_CHROME_PATH },
       }),
     );
     expect(result.appliedFields).toEqual(["timezone"]);
@@ -401,7 +444,7 @@ describe("DesktopEnvironmentService update", () => {
     const result = await harness.service.update(
       "env-test",
       draftFor({
-        browser: { executablePath: "C:\\Chrome\\other\\chrome.exe" },
+        browser: { executablePath: OTHER_CHROME_PATH },
       }),
     );
     expect(result.environment.verification?.stale).toBe(true);
@@ -426,7 +469,7 @@ describe("DesktopEnvironmentService update", () => {
     const harness = setup();
     seed(harness, {
       ...recordFor(),
-      dataDir: "C:\\other\\chrome-data",
+      dataDir: path.join(TEST_DATA_ROOT, "other", "chrome-data"),
     });
     await expect(
       harness.service.update("env-test", draftFor({ name: "x" })),
@@ -456,6 +499,17 @@ describe("DesktopEnvironmentService launch", () => {
       expect(harness.adapter.launchCalls).toBe(0);
     },
   );
+
+  it("refuses a stored restricted environment on macOS before launching", async () => {
+    const harness = setup({ platform: "darwin" });
+    seed(harness, recordFor({ isolation: "app_container" }));
+    const error: unknown = await harness.service
+      .launch("env-test")
+      .catch((cause: unknown) => cause);
+    expect(error).toMatchObject({ code: "unsupported_isolation" });
+    expect((error as Error).message).toContain("Windows 专属");
+    expect(harness.adapter.launchCalls).toBe(0);
+  });
 
   it("launches through the adapter and records verified configuration", async () => {
     const harness = setup();
@@ -566,7 +620,7 @@ describe("DesktopEnvironmentService launch", () => {
     const harness = setup();
     seed(harness, {
       ...recordFor(),
-      dataDir: "C:\\outside\\chrome-data",
+      dataDir: OUTSIDE_PROFILE,
     });
     await expect(harness.service.launch("env-test")).rejects.toMatchObject({
       code: "data_directory_conflict",
@@ -830,7 +884,7 @@ describe("DesktopEnvironmentService remove", () => {
     const harness = setup();
     seed(harness, {
       ...recordFor(),
-      dataDir: "C:\\outside\\chrome-data",
+      dataDir: OUTSIDE_PROFILE,
     });
     await expect(
       harness.service.remove("env-test", { deleteData: false }),
@@ -850,7 +904,7 @@ describe("DesktopEnvironmentService views and discovery", () => {
     const harness = setup();
     const record = {
       ...recordFor({ pendingRestart: true }),
-      dataDir: "C:\\relocated\\chrome-data",
+      dataDir: path.join(TEST_DATA_ROOT, "relocated", "chrome-data"),
     };
     seed(harness, record);
     harness.store.setWarning({
@@ -941,7 +995,7 @@ describe("DesktopEnvironmentService views and discovery", () => {
     const harness = setup();
     expect(harness.service.discoverBrowsers()).toEqual([
       {
-        executablePath: "C:\\Chrome\\chrome.exe",
+        executablePath: TEST_CHROME_PATH,
         version: "156.0.0.0",
         source: "system",
       },
@@ -961,7 +1015,7 @@ describe("DesktopEnvironmentService views and discovery", () => {
     harness.store.setWarning({
       code: "persistence_recovered",
       message: "recovered",
-      backupPath: "C:\\backup",
+      backupPath: path.join(TEST_DATA_ROOT, "backup"),
     });
     await harness.service.initialize();
     expect(harness.log.list().map((entry) => entry.code)).toEqual([
@@ -1008,7 +1062,7 @@ describe("configuration projection", () => {
 
   it("includes every optional adapter field", () => {
     const record = {
-      ...recordFor({ executablePath: "C:\\Chrome\\chrome.exe" }),
+      ...recordFor({ executablePath: TEST_CHROME_PATH }),
       geolocation: { latitude: 31.2, longitude: 121.5, accuracy: 20 },
       runtimePolicy: {
         isolation: "restricted" as const,
@@ -1020,7 +1074,7 @@ describe("configuration projection", () => {
     };
     expect(toAdapterConfig(record)).toMatchObject({
       browser: {
-        executablePath: "C:\\Chrome\\chrome.exe",
+        executablePath: TEST_CHROME_PATH,
         userDataDir: record.dataDir,
       },
       runtimePolicy: {
@@ -1039,7 +1093,7 @@ describe("configuration projection", () => {
     const changed = {
       ...base,
       name: "x",
-      browser: { executablePath: "C:\\Chrome\\chrome.exe" },
+      browser: { executablePath: TEST_CHROME_PATH },
       timezone: "Europe/Berlin",
       locale: "en-US",
       viewport: { width: 800, height: 600, deviceScaleFactor: 2 },

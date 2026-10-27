@@ -12,9 +12,10 @@
 
 Contracts 是**数据协议**，不是传输层：
 
-- 不定义 Named Pipe 名称、帧格式、连接生命周期或鉴权。
+- 不定义本地端点名称（Windows 命名管道 / macOS Unix socket）、帧格式、连接
+  生命周期或鉴权。
 - 不定义 Chrome/CDP 启动方式，也不定义 Electron IPC 通道。
-- 不创建进程、不调用 Windows API、不决定隔离策略。
+- 不创建进程、不调用平台 API、不决定隔离策略。
 - 传输层负责把完整的 JSON 消息送达；协议只规定消息内容。
 
 任何调用方（Desktop、Browser Adapter、测试工具）在发送前都应校验请求，在
@@ -30,12 +31,19 @@ Contracts 是**数据协议**，不是传输层：
 | `environmentId` | 1–128 字符，无控制字符 | 不透明环境标识，由创建方生成 |
 | `processInstanceId` | `<pid>:<creationTime100ns>` | 进程的持久身份 |
 
-`pid` 会被 Windows 复用，因此**单独的 PID 不是身份**。所有引用进程的请求都
-使用 `processInstanceId`；状态中的 `pid` 只用于诊断与人工排查。
+`pid` 会在两个平台上被复用，因此**单独的 PID 不是身份**。所有引用进程的请求
+都使用 `processInstanceId`；状态中的 `pid` 只用于诊断与人工排查。
 
-`creationTime100ns` 是 Windows FILETIME 的十进制字符串。真实值约为 `1.3e17`，
-超过 JavaScript 的 `Number.MAX_SAFE_INTEGER`，因此绝不能用 JSON 数字传输。
-`startedAtUnixMs` 必须由它精确推导：
+`creationTime100ns` 是「1601 纪元、100 纳秒」的十进制字符串。Windows 直接来自
+FILETIME；macOS 用 `proc_pidinfo(PROC_PIDTBSDINFO)` 的
+`pbi_start_tvsec/pbi_start_tvusec` 合成为同一口径：
+
+```
+creationTime100ns = tv_sec * 10_000_000 + tv_usec * 10 + 11_644_473_600_000_000
+```
+
+真实值约为 `1.3e17`，超过 JavaScript 的 `Number.MAX_SAFE_INTEGER`，因此绝不能
+用 JSON 数字传输。`startedAtUnixMs` 必须由它精确推导：
 
 ```
 startedAtUnixMs = floor(creationTime100ns / 10000) - 11644473600000
@@ -92,7 +100,7 @@ startedAtUnixMs = floor(creationTime100ns / 10000) - 11644473600000
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `environmentId` | 是 | 1–128 字符，无控制字符 |
-| `executable` | 是 | 绝对 Windows 路径（盘符或 UNC），不使用 `PATH` 解析 |
+| `executable` | 是 | 绝对路径：Windows 盘符/UNC，或 POSIX 以 `/` 开头；不使用 `PATH` 解析 |
 | `arguments` | 是 | 独立参数数组，调用方不做字符串拼接；每个参数不含 NUL |
 | `workingDirectory` | 否 | 绝对路径 |
 | `environmentOverrides` | 否 | 覆盖继承环境；名称不含 `=`/NUL，值不含 NUL；大小写折叠后不得重复 |
@@ -109,6 +117,9 @@ startedAtUnixMs = floor(creationTime100ns / 10000) - 11644473600000
   `allow` 或 `deny`。
 - `containment.killOnClose` 必须为 `true`；`maxProcesses`、
   `memoryLimitBytes` 若存在必须大于 0；`allowedProgramRoots` 至少 1 项。
+- macOS 只接受 `managed`，且 `managed` 的文件策略必须是 `inherited`、网络必须
+  是 `allow`。`restricted` / `app_container` 与两个资源上限会在创建进程前以
+  `capability_unavailable` 拒绝；Schema 不按平台收紧，运行时才是权威。
 - 每个模式的 `allowedProgramRoots` 最多 32 项，`additionalRoots` 最多 32 项，
   `environmentOverrides` 最多 256 项，`arguments` 最多 1024 项。
 
@@ -177,7 +188,7 @@ Schema 只能检查结构与明显边界。路径是否存在、是否在允许�
 | `invalid_request` | 运行时 | 结构或基本不变量不合法 | `true` |
 | `policy_violation` | 运行时 | 请求合法但被安全策略拒绝 | `true` |
 | `capability_unavailable` | 运行时 | 平台原语缺失或当前会话不可用 | `false` |
-| `platform_failure` | 运行时 | Windows API 调用失败 | `false` |
+| `platform_failure` | 运行时 | 平台调用失败（Windows API 或 POSIX 调用） | `false` |
 | `unsupported` | 运行时 | 契约存在但当前平台/实现不支持 | `true` |
 | `internal` | 运行时 | 运行时内部不变量被破坏 | `false` |
 | `unsupported_protocol_version` | 协议 | 版本不是本实现支持的整数 | `true` |
@@ -192,8 +203,9 @@ Schema 只能检查结构与明显边界。路径是否存在、是否在允许�
 
 | 字段 | 允许的错误码 | 说明 |
 | --- | --- | --- |
-| `operation` | `platform_failure`（必填） | 失败的 Windows API 名称 |
-| `windowsError` | `platform_failure`（必填） | 原始 Win32 错误码，仅诊断 |
+| `operation` | `platform_failure`（必填） | 失败的操作名（Windows API 或 POSIX 调用） |
+| `windowsError` | `platform_failure`（与 `errno` 二选一，必填） | 原始 Win32 错误码，仅诊断 |
+| `errno` | `platform_failure`（与 `windowsError` 二选一，必填） | POSIX `errno` 数值，仅诊断 |
 | `method` | `unknown_method`（必填） | 可打印 ASCII 方法名，最长 128 |
 | `supportedProtocolVersion` | `unsupported_protocol_version`（必填） | 实现支持的版本 |
 
@@ -220,6 +232,36 @@ Schema 只能检查结构与明显边界。路径是否存在、是否在允许�
   "notes": []
 }
 ```
+
+`CapabilityReport` 的六个 Windows 键（`jobObject`、`appContainer`、
+`appContainerAcl`、`restrictedToken`、`processMitigation`、`etw`）在所有平台上
+都是必填：macOS 会把它们报为 `unsupported` 并给出「Windows primitive」细节，
+这样 v2 消费方无需按平台猜测字段是否存在。macOS 另有以下可选字段：
+
+```json
+{
+  "platform": {
+    "os": "macos",
+    "osVersion": "27.0.1",
+    "version": { "major": 27, "minor": 0, "build": 1 },
+    "architecture": "arm64",
+    "elevated": false,
+    "integrityLevel": "unknown"
+  },
+  "processGroup": { "state": "supported", "detail": "created a child in its own process group and verified getpgid" },
+  "unixSocket": { "state": "supported" },
+  "processIdentity": { "state": "supported" },
+  "resourceLimits": {
+    "maxProcesses": { "state": "unavailable", "detail": "no per-tree process limit on macOS" },
+    "memoryLimit": { "state": "unavailable", "detail": "no per-tree memory limit on macOS" }
+  }
+}
+```
+
+`osVersion` 是精确的系统版本字符串（macOS 为 `27.0.1`）；Windows 上省略，
+`version` 仍承载 major/minor/build。macOS 上 `version.build` 承载 patch 号。
+Windows 报告不包含 `processGroup` / `resourceLimits`，线上 JSON 与旧版本逐字节
+一致。
 
 每个能力项至少包含 `state`，可选 `detail`（1–1024 字符）：
 
@@ -282,7 +324,16 @@ Schema 只能检查结构与明显边界。路径是否存在、是否在允许�
 | `networkAccess` | `allow` / `deny` |
 | `networkCapabilitiesVerified` | 子进程能力 SID 与网络策略一致 |
 
-`managed` 只是 Job Object 生命周期约束，不是沙箱；调用方不应把它宣传为隔离。
+macOS 的 `applied` 还会带以下可选字段（Windows 省略，保持线上 JSON 不变）：
+
+| 字段 | 含义 |
+| --- | --- |
+| `processGroupAttached` | 子进程已进入独立 POSIX 进程组 |
+| `processGroupId` | 回读到的 PGID |
+| `killOnCloseArmed` | 运行时正常退出/关闭时会向整组发终止信号 |
+
+`managed` 只是生命周期约束，不是沙箱：Windows 是 Job Object，macOS 是进程组；
+调用方不应把它宣传为隔离。
 `diagnostics` 可选，因为传输层可能通过 `process.getDiagnostics` 单独提供。
 诊断条目包含 `timestampUnixMs`、`level`、`component`、`code`、`message` 与
 可选 `context`（字符串键值，不得含敏感信息）。
@@ -316,6 +367,8 @@ UI 中声称支持事件推送。调用方可使用 `process.getStatus` 轮询�
   `unsupported_protocol_version`，并带 `details.supportedProtocolVersion`。
 - 增加可选字段、增加新方法或新错误码：可以在同一版本内演进，但严格未知字段
   检查意味着旧实现会拒绝携带新字段的消息，因此跨版本混用时应先升级运行时。
+  本次 macOS 支持即按此规则扩展：协议仍为 `2`，`CONTRACT_VERSION` 从
+  `0.2.0` 升到 `0.3.0`；Windows 的输出不含任何新字段。
 - 删除字段、改名、收紧约束、改变语义、改变必填性、改变枚举含义：破坏性变更，
   必须提升 `PROTOCOL_VERSION`，并同步 Rust 常量。
 - 未知的安全相关字段不会被忽略；它们会被整体拒绝。这是有意的失败模式。

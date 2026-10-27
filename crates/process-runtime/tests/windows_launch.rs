@@ -3,6 +3,8 @@
 //! Every test here creates a real process. The test child is the compiled
 //! `virealm-test-child` binary; it never receives a shell command string.
 
+#![cfg(windows)]
+
 mod common;
 
 use std::ffi::OsString;

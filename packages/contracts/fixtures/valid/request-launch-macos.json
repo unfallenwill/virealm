@@ -1,0 +1,24 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_launch_macos_001",
+  "method": "process.launch",
+  "params": {
+    "environmentId": "env-demo-macos",
+    "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "arguments": [
+      "--user-data-dir=/Users/demo/Library/Application Support/Virealm/environments/env-demo-macos/chrome-data"
+    ],
+    "workingDirectory": "/Users/demo/Library/Application Support/Virealm/environments/env-demo-macos",
+    "environmentOverrides": {
+      "VIREALM_LOG_LEVEL": "info"
+    },
+    "dataDirectory": "/Users/demo/Library/Application Support/Virealm/environments/env-demo-macos",
+    "policy": {
+      "isolation": "managed",
+      "allowedProgramRoots": ["/Applications/Google Chrome.app"],
+      "fileAccess": { "kind": "inherited" },
+      "networkAccess": "allow",
+      "containment": { "killOnClose": true }
+    }
+  }
+}

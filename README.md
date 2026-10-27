@@ -1,22 +1,39 @@
 # Virealm
 
-为 Windows 提供隔离浏览环境的桌面应用：每个环境拥有独立的浏览器数据目录、
-受约束的进程树，以及可验证的时区、语言与视口配置。
+为 Windows 与 macOS（Apple silicon）提供隔离浏览环境的桌面应用：每个环境拥有
+独立的浏览器数据目录、受约束的进程树，以及可验证的时区、语言与视口配置。
+
+## 平台矩阵
+
+| 平台 | 状态 | 隔离级别 | 运行时端点 | 打包 |
+| --- | --- | --- | --- | --- |
+| Windows 11 x86_64 | 已实现并实测 | `managed`（Job Object）、`restricted`、`app_container`；Chrome 只能使用 `managed` | 命名管道 | NSIS x64 安装器；本地 `dir` |
+| macOS 27 arm64 | 已实现并实测 | `managed`（POSIX 进程组）；不提供 `restricted` / `app_container` | Unix domain socket | DMG（arm64，未签名）；本地 `dir` |
+
+两个平台都不把 `managed` 当作沙箱：Windows 用 Job Object、macOS 用进程组约束
+生命周期，文件与网络仍继承当前用户。`restricted` / `app_container` 是 Windows
+专属能力，macOS 运行时会明确拒绝而不是模拟或降级。
 
 ## 当前状态
 
-第一阶段（`process-runtime` 的 Windows 实现）已完成并在本机 Windows 11 x86_64
-上通过集成测试：
+第一阶段（`process-runtime`）已完成，Windows 11 x86_64 与 macOS 27.0.1 arm64
+均通过集成测试：
 
-- 能力探测直接调用 Windows API 验证 Job Object、AppContainer、ACL、受限令牌与
-  进程缓解策略，区分 `supported` / `unsupported` / `unavailable` / `not_verified`。
-- 三种隔离模式：`managed`（普通进程 + Job Object，**不是**沙箱）、`restricted`
-  （受限令牌 + 低完整性）、`app_container`（文件与网络策略可强制执行）。
-- 挂起创建 → 应用隔离 → 回读验证 → 恢复执行；验证失败会终止进程并返回结构化错误，
-  不存在静默降级。
-- Job Object 生命周期、进程数/内存限制、进程树终止；进程身份使用 PID + 创建时间。
+- 能力探测直接调用平台 API，区分 `supported` / `unsupported` /
+  `unavailable` / `not_verified`。Windows 覆盖 Job Object、AppContainer、ACL、
+  受限令牌与进程缓解策略；macOS 覆盖 POSIX 进程组、Unix socket、进程身份与
+  资源上限可用性。
+- 隔离模式：Windows 提供 `managed`（Job Object，**不是**沙箱）、`restricted`
+  （受限令牌 + 低完整性）、`app_container`；macOS 只提供 `managed`
+  （POSIX 进程组）。两个平台都通过回读证据验证隔离，失败即终止进程。
+- Windows 以挂起状态创建进程，应用隔离后再恢复执行；macOS 在 `posix_spawn`
+  前设置进程组（`process_group(0)`），随后用 `getpgid` 与 `proc_pidinfo`
+  校验进程组与身份。
+- 生命周期与终止：Windows 用 Job Object（含进程数/内存限制）；macOS 用
+  进程组信号终止。macOS **没有**按进程树聚合的进程/内存上限，配置这两个字段
+  会被拒绝。
 - 最小 CLI（`virealm-runtime probe|run|serve`）用于从外部调用公共 API；
-  `serve` 在命名管道上提供版本化 IPC，供 TypeScript 客户端启动与管理进程。
+  `serve` 在命名管道（Windows）或 Unix domain socket（macOS）上提供版本化 IPC。
 
 详细结果与未验证项见 [docs/test-report.md](docs/test-report.md) 与
 [docs/known-limitations.md](docs/known-limitations.md)。
@@ -24,7 +41,9 @@
 第二阶段（`browser-adapter`）已完成：它在 Process Runtime 之上启动真实 Chrome，
 为每个环境分配独立、持久化的 Profile，通过 CDP 应用并验证时区、语言、视口与
 `Accept-Language`，并提供环境生命周期、目标管理与明确的验证报告。它从不自行
-`spawn` 浏览器进程，也不使用固定调试端口。使用方式、配置语义与已知限制见
+`spawn` 浏览器进程，也不使用固定调试端口。两个平台各自发现标准安装位置
+（Windows 的 `chrome.exe`、macOS 的 `/Applications/Google Chrome.app`），
+并为 macOS 的 `.app` 包生成正确的程序根目录。使用方式、配置语义与已知限制见
 [packages/browser-adapter/README.md](packages/browser-adapter/README.md)。
 
 第三阶段（`desktop`）已完成：Electron + React + TypeScript 桌面应用，提供环境
@@ -36,8 +55,15 @@ Browser Adapter。使用说明见 [apps/desktop/README.md](apps/desktop/README.m
 
 ```
 virealm/
+├── .github/
+│   ├── release-notes.md          # Release 的安装说明模板
+│   └── workflows/
+│       ├── ci.yml
+│       └── release.yml           # tag 触发的安装包构建与发布
 ├── apps/
 │   └── desktop/                  # 第三阶段（已实现）：Electron + React 环境管理 UI
+│       ├── build-resources/      # NSIS 安装器 include（安装后重授 ACL）
+│       └── scripts/              # 构建、打包与安装包验证脚本
 ├── packages/
 │   ├── contracts/                # 协议 Schema、生成类型与运行时校验器
 │   ├── runtime-client/           # runtime 管道客户端与 daemon 启动辅助
@@ -49,6 +75,7 @@ virealm/
 │   ├── component-contracts.md
 │   ├── security-model.md
 │   ├── development.md
+│   ├── release.md
 │   ├── test-report.md
 │   ├── known-limitations.md
 │   └── screenshots/              # 界面检查截图
@@ -110,7 +137,19 @@ corepack pnpm desktop:build
 cargo build --release -p virealm-process-runtime --bin virealm-runtime
 corepack pnpm desktop:test:integration
 corepack pnpm desktop:package
+corepack pnpm desktop:package:win   # Windows NSIS x64 安装器
+corepack pnpm desktop:package:mac   # macOS arm64 DMG
 ```
+
+`desktop:package` 仍产出 `dir`：macOS 的 `apps/desktop/release/mac-arm64/Virealm.app`
+与 Windows 的 `win-unpacked`，运行时分别放在
+`Contents/Resources/runtime/` 与 `resources/runtime/`。安装器由 tag 触发的
+发布流水线构建，也可以在对应平台用 `desktop:package:win` /
+`desktop:package:mac` 本地构建；两者都未签名。发布流程、版本规则与演练方式见
+[docs/release.md](docs/release.md)。
+
+真实 Chrome 集成测试需要 `/Applications/Google Chrome.app`；CI 中设置
+`VIREALM_REQUIRE_INTEGRATION=1` 可让缺少前置条件直接失败而不是跳过。
 
 完整命令与阶段计划见 [docs/development.md](docs/development.md)。
 

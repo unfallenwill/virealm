@@ -1,0 +1,16 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_launch_macos_003",
+  "method": "process.launch",
+  "ok": false,
+  "error": {
+    "code": "platform_failure",
+    "message": "the failure reports two platform error codes",
+    "retryable": false,
+    "details": {
+      "operation": "posix_spawn",
+      "windowsError": 5,
+      "errno": 13
+    }
+  }
+}

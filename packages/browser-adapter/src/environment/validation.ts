@@ -22,11 +22,17 @@ import {
   resolveProfileLayout,
 } from "../chrome/profile.js";
 import { isNavigableUrl } from "../domain/urls.js";
+import { pathKey } from "../platform/paths.js";
 
 export interface ValidationContext {
   readonly dataRoot: string;
   readonly discovery: ChromeDiscoveryPort;
+  /** Windows: usually `%LOCALAPPDATA%`. */
   readonly localAppData: string | undefined;
+  /** macOS: home directory whose Chrome profile roots must be refused. */
+  readonly homeDirectory?: string | undefined;
+  /** Path semantics used for comparisons. Defaults to the host platform. */
+  readonly platform?: string | undefined;
 }
 
 const TOP_LEVEL_FIELDS = new Set([
@@ -143,7 +149,11 @@ export function validateEnvironment(
 
   if (
     browser.userDataDir !== undefined &&
-    isDefaultChromeProfilePath(browser.userDataDir, context.localAppData)
+    isDefaultChromeProfilePath(browser.userDataDir, {
+      localAppData: context.localAppData,
+      homeDirectory: context.homeDirectory,
+      platform: context.platform,
+    })
   ) {
     add(
       "browser.userDataDir",
@@ -153,12 +163,12 @@ export function validateEnvironment(
   }
 
   const discovered = context.discovery.discover(browser.executablePath);
-  const selected = selectBrowser(discovered, browser);
+  const selected = selectBrowser(discovered, browser, context.platform);
   if (browser.executablePath !== undefined && selected === undefined) {
     add(
       "browser.executablePath",
       "chrome_not_found",
-      "the configured Chrome executable does not exist or is not chrome.exe",
+      "the configured Chrome executable does not exist or is not a Chrome executable",
     );
   } else if (browser.executablePath === undefined && selected === undefined) {
     add(
@@ -233,11 +243,12 @@ export function validateEnvironment(
 function selectBrowser(
   discovered: readonly DiscoveredBrowser[],
   browser: BrowserSelection,
+  platform: string | undefined,
 ): DiscoveredBrowser | undefined {
   if (browser.executablePath !== undefined) {
-    const expected = path.resolve(browser.executablePath).toLowerCase();
+    const expected = pathKey(browser.executablePath, platform);
     return discovered.find(
-      (candidate) => candidate.executablePath.toLowerCase() === expected,
+      (candidate) => pathKey(candidate.executablePath, platform) === expected,
     );
   }
   return discovered[0];

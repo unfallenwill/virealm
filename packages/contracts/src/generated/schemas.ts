@@ -101,6 +101,20 @@ export const virealmSchema: JsonSchema = {
         "networkCapabilitiesVerified": {
           "type": "boolean",
           "description": "The child token's capability SIDs matched the network policy."
+        },
+        "processGroupAttached": {
+          "type": "boolean",
+          "description": "The child was placed in a dedicated POSIX process group. Omitted on Windows."
+        },
+        "processGroupId": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "The observed process-group id. Omitted on Windows."
+        },
+        "killOnCloseArmed": {
+          "type": "boolean",
+          "description": "The runtime will signal the process group when its handle is dropped. Omitted on Windows."
         }
       }
     },
@@ -161,6 +175,7 @@ export const virealmSchema: JsonSchema = {
         "processMitigation",
         "etw"
       ],
+      "description": "The six Windows keys stay required for every platform so a v2 consumer can read any report. On macOS they report unsupported, while processGroup, unixSocket and resourceLimits describe what the host actually provides.",
       "properties": {
         "platform": {
           "$ref": "#/$defs/PlatformInfo"
@@ -182,6 +197,22 @@ export const virealmSchema: JsonSchema = {
         },
         "etw": {
           "$ref": "#/$defs/Capability"
+        },
+        "processGroup": {
+          "$ref": "#/$defs/Capability",
+          "description": "POSIX process-group containment. Omitted on Windows."
+        },
+        "unixSocket": {
+          "$ref": "#/$defs/Capability",
+          "description": "Unix domain socket transport with peer credential checks. Omitted on Windows."
+        },
+        "processIdentity": {
+          "$ref": "#/$defs/Capability",
+          "description": "Process identity derived from the kernel start time. Omitted on Windows."
+        },
+        "resourceLimits": {
+          "$ref": "#/$defs/ResourceLimits",
+          "description": "Per-tree process and memory limits. Omitted on Windows, where Job Object limits cover them."
         },
         "notes": {
           "type": "array",
@@ -397,13 +428,19 @@ export const virealmSchema: JsonSchema = {
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
-          "description": "Windows API that failed, when the failure came from a platform call."
+          "description": "Platform API that failed, when the failure came from a platform call."
         },
         "windowsError": {
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295,
           "description": "Raw Win32 error code. Diagnostic only; do not parse the number to decide behaviour."
+        },
+        "errno": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "description": "Raw POSIX errno. Diagnostic only; mutually exclusive with windowsError."
         },
         "method": {
           "type": "string",
@@ -468,8 +505,8 @@ export const virealmSchema: JsonSchema = {
       "type": "string",
       "minLength": 1,
       "maxLength": 32767,
-      "pattern": "^(?:[A-Za-z]:[\\\\/]|\\\\\\\\).*$",
-      "description": "Absolute Windows path (drive-qualified or UNC). Relative paths are rejected before any process is created."
+      "pattern": "^(?:[A-Za-z]:[\\\\/]|\\\\\\\\|/).*$",
+      "description": "Absolute Windows path (drive-qualified or UNC) or POSIX absolute path. Relative paths are rejected before any process is created."
     },
     "InheritedFileAccess": {
       "type": "object",
@@ -718,7 +755,13 @@ export const virealmSchema: JsonSchema = {
           "maxLength": 32
         },
         "version": {
-          "$ref": "#/$defs/WindowsVersion"
+          "$ref": "#/$defs/PlatformVersion"
+        },
+        "osVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Exact product version string, e.g. macOS \"27.0.1\". Omitted on Windows."
         },
         "architecture": {
           "type": "string",
@@ -731,6 +774,33 @@ export const virealmSchema: JsonSchema = {
         },
         "integrityLevel": {
           "$ref": "#/$defs/IntegrityLevel"
+        }
+      }
+    },
+    "PlatformVersion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "major",
+        "minor",
+        "build"
+      ],
+      "description": "Windows reports major/minor/build. macOS reports major/minor/patch from kern.osproductversion, with the patch component carried in build; osVersion carries the exact product string.",
+      "properties": {
+        "major": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "minor": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "build": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
         }
       }
     },
@@ -1039,6 +1109,22 @@ export const virealmSchema: JsonSchema = {
       "pattern": "^req_[A-Za-z0-9_-]{1,64}$",
       "description": "Correlates a response with the request that produced it."
     },
+    "ResourceLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxProcesses",
+        "memoryLimit"
+      ],
+      "properties": {
+        "maxProcesses": {
+          "$ref": "#/$defs/Capability"
+        },
+        "memoryLimit": {
+          "$ref": "#/$defs/Capability"
+        }
+      }
+    },
     "Response": {
       "oneOf": [
         {
@@ -1158,32 +1244,6 @@ export const virealmSchema: JsonSchema = {
         },
         "result": {
           "$ref": "#/$defs/ProcessStatus"
-        }
-      }
-    },
-    "WindowsVersion": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "major",
-        "minor",
-        "build"
-      ],
-      "properties": {
-        "major": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 4294967295
-        },
-        "minor": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 4294967295
-        },
-        "build": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 4294967295
         }
       }
     }

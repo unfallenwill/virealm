@@ -1,4 +1,4 @@
-//! Test child used by Windows integration tests.
+//! Test child used by process-runtime integration tests.
 //!
 //! It performs one observable action per flag, writes a small JSON report
 //! without dumping the environment, and then optionally sleeps so the parent
@@ -173,6 +173,7 @@ fn write_file(path: &Path) -> FileResult {
     }
 }
 
+#[cfg(windows)]
 fn allocate(bytes: usize) -> AllocationResult {
     // SAFETY: a null address lets the allocator choose the region; the size is
     // the caller's request. No pointer is dereferenced.
@@ -192,6 +193,37 @@ fn allocate(bytes: usize) -> AllocationResult {
             error_code: std::io::Error::last_os_error().raw_os_error(),
         }
     } else {
+        AllocationResult {
+            ok: true,
+            bytes,
+            error_code: None,
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn allocate(bytes: usize) -> AllocationResult {
+    // SAFETY: an anonymous private mapping has no file descriptor; the kernel
+    // chooses the address. The pointer is never dereferenced.
+    let pointer = unsafe {
+        libc::mmap(
+            std::ptr::null_mut(),
+            bytes,
+            libc::PROT_READ | libc::PROT_WRITE,
+            libc::MAP_ANON | libc::MAP_PRIVATE,
+            -1,
+            0,
+        )
+    };
+    if pointer == libc::MAP_FAILED {
+        AllocationResult {
+            ok: false,
+            bytes,
+            error_code: std::io::Error::last_os_error().raw_os_error(),
+        }
+    } else {
+        // The mapping is released when the child exits; tests only observe the
+        // allocation result.
         AllocationResult {
             ok: true,
             bytes,

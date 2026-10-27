@@ -25,10 +25,20 @@
 //!
 //! ## Platform
 //!
-//! Windows 10/11. The crate intentionally fails to compile on other platforms
-//! rather than pretending to provide isolation it cannot implement.
+//! Windows 10/11 and macOS (Apple silicon first). The crate intentionally
+//! fails to compile on other platforms rather than pretending to provide
+//! isolation it cannot implement.
+//!
+//! macOS implements [`IsolationMode::Managed`] with a POSIX process group and
+//! reports [`IsolationMode::Restricted`] and [`IsolationMode::AppContainer`] as
+//! unavailable. There is no macOS equivalent of those Windows primitives, and
+//! the runtime never substitutes a weaker mechanism silently.
 
-#![cfg(windows)]
+#[cfg(not(any(windows, target_os = "macos")))]
+compile_error!(
+    "virealm-process-runtime supports Windows and macOS only; other platforms have no \
+     isolation backend"
+);
 
 pub mod capabilities;
 pub mod diagnostics;
@@ -40,8 +50,8 @@ pub mod policy;
 pub mod process;
 
 pub use capabilities::{
-    Capability, CapabilityReport, CapabilityState, IntegrityLevel, PlatformInfo, WindowsVersion,
-    probe_capabilities,
+    Capability, CapabilityReport, CapabilityState, IntegrityLevel, PlatformInfo, PlatformVersion,
+    ResourceLimits, WindowsVersion, probe_capabilities,
 };
 pub use diagnostics::{DiagnosticEvent, DiagnosticLevel, DiagnosticSink, NullDiagnosticSink};
 pub use error::{ErrorCode, ErrorInfo, Result, RuntimeError};
@@ -58,4 +68,4 @@ pub use process::{AppliedIsolation, ManagedProcess, ProcessId, ProcessState, Pro
 pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Version of the crate's public Rust API.
-pub const CONTRACT_VERSION: &str = "0.2.0";
+pub const CONTRACT_VERSION: &str = "0.3.0";

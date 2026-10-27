@@ -1,6 +1,9 @@
 export {
   DEFAULT_RUNTIME_PIPE_PATH,
+  DEFAULT_RUNTIME_SOCKET_NAME,
+  MAX_RUNTIME_SOCKET_PATH_BYTES,
   RuntimeClient,
+  defaultRuntimeAddress,
   type RuntimeClientOptions,
 } from "./client.js";
 export {

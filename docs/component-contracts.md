@@ -21,9 +21,9 @@ Rust 侧对应类型位于 `crates/process-runtime/src/`。两侧不共享代码
 
 Contracts 定义的是**消息内容**，不是消息如何到达：
 
-- 不创建 Named Pipe、套接字或 Electron IPC 通道，不处理连接、重连、鉴权与
+- 不创建命名管道、Unix socket 或 Electron IPC 通道，不处理连接、重连、鉴权与
   帧边界。
-- 不启动 Chrome/CDP，不创建进程，不调用 Windows API。
+- 不启动 Chrome/CDP，不创建进程，不调用平台 API。
 - 不实现生命周期、权限或隔离策略；这些由 `crates/process-runtime` 裁决。
 - 不规定 Desktop 与 Browser Adapter 的内部架构。
 
@@ -37,7 +37,7 @@ Contracts 定义的是**消息内容**，不是消息如何到达：
 | --- | --- | --- |
 | 对象字段 | camelCase | `workingDirectory`、`memoryLimitBytes` |
 | 枚举值 | snake_case | `app_container`、`policy_violation` |
-| 路径 | 绝对 Windows 路径；禁止通过 `PATH` 解析可执行文件 | `C:\\Program Files\\Virealm\\virealm-child.exe` |
+| 路径 | 绝对路径（Windows 盘符/UNC 或 POSIX `/`）；禁止通过 `PATH` 解析可执行文件 | `C:\\Program Files\\Virealm\\virealm-child.exe`、`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` |
 | 时间 | Unix 毫秒整数 | `1768435200000` |
 | 进程身份 | `<pid>:<creationTime100ns>` | `4242:134129088000000000` |
 | FILETIME | 十进制字符串（u64） | `"134129088000000000"` |
@@ -65,8 +65,8 @@ JavaScript 安全整数范围。`startedAtUnixMs` 必须精确等于
 - 所有消息拒绝未知字段（`additionalProperties: false`）。安全相关字段不会被
   静默忽略；旧实现会整体拒绝携带新字段的消息。
 
-`CONTRACT_VERSION`（Rust 常量，当前 `0.2.0`）描述 crate 公共 API 版本，与线
-协议版本相互独立。
+`CONTRACT_VERSION`（Rust 常量，当前 `0.3.0`）描述 crate 公共 API 版本，与线
+协议版本相互独立。macOS 支持以可选字段的形式增量加入，因此协议版本保持 `2`。
 
 ## 5. 消息与错误模型
 
@@ -104,8 +104,9 @@ JavaScript 安全整数范围。`startedAtUnixMs` 必须精确等于
 `retryable` 表示“重复完全相同的请求不会新增副作用”，不表示“下一次很可能
 成功”。失败的启动可能已经创建进程，重试前应先查询状态。
 
-`details` 受错误码限制：`operation` 与 `windowsError` 仅用于
-`platform_failure` 且必填；`method` 仅用于 `unknown_method`；
+`details` 受错误码限制：`operation` 与 `windowsError` / `errno` 仅用于
+`platform_failure`，其中 `operation` 必填，且 `windowsError`（Windows）与
+`errno`（macOS）必须恰好出现一个；`method` 仅用于 `unknown_method`；
 `supportedProtocolVersion` 仅用于 `unsupported_protocol_version`。错误消息与
 details 不得包含堆栈、路径、令牌、Cookie 或凭据。
 
@@ -120,9 +121,12 @@ details 不得包含堆栈、路径、令牌、Cookie 或凭据。
 | `unavailable` | 原语存在，但当前会话无法使用（例如权限不足） |
 | `not_verified` | 尚未验证，不能视为可用 |
 
-探测结论来自实际 API 调用，不来自版本号推断。当前报告覆盖 Job Object、
-AppContainer、AppContainer ACL、受限令牌、进程缓解策略与 ETW。消费方不得把
-`not_verified` 或 `unavailable` 当作可用。
+探测结论来自实际 API 调用，不来自版本号推断。Windows 报告覆盖 Job Object、
+AppContainer、AppContainer ACL、受限令牌、进程缓解策略与 ETW。macOS 报告保留
+这六个键并统一报 `unsupported`，另提供可选的 `processGroup`、`unixSocket`、
+`processIdentity` 与 `resourceLimits`（按进程组演练结果判定）；两个资源上限在
+macOS 上为 `unavailable`。消费方不得把 `not_verified` 或 `unavailable` 当作
+可用。
 
 ## 7. 启动请求与状态
 
@@ -143,9 +147,11 @@ AppContainer、AppContainer ACL、受限令牌、进程缓解策略与 ETW。消
 - `applied`：启动后从进程/作业回读的隔离证据，而不是请求的副本。
 - `diagnostics`（可选）：运行时当前持有的诊断条目。
 
-`managed` 只是 Job Object 生命周期约束，不是沙箱；`restricted` 增加低完整性
-受限令牌；`app_container` 增加 AppContainer 与显式文件能力。调用方展示隔离
-程度时应以 `applied` 为准。
+`managed` 只是生命周期约束，不是沙箱：Windows 为 Job Object，macOS 为 POSIX
+进程组（`applied` 额外带可选的 `processGroupAttached` / `processGroupId` /
+`killOnCloseArmed`）。`restricted` 增加低完整性受限令牌；`app_container` 增加
+AppContainer 与显式文件能力（两者仅 Windows）。调用方展示隔离程度时应以
+`applied` 为准。
 
 事件目前只定义 `process.exited`，且**运行时尚未实现推送通道**。在该能力真正
 实现前，不得声称支持事件。
@@ -158,12 +164,15 @@ Process Runtime 在触达操作系统前必须拒绝以下请求（TS 校验器�
 - 环境标识为空、超过 128 字节或包含控制字符。
 - 可执行文件路径为空、不是绝对路径、不存在或不是文件。
 - 允许的程序目录为空、不是绝对路径、不存在或不是目录。
-- 可执行文件不在任一允许目录之内（按路径边界比较，防止 `C:\Program Files Evil`）。
+- 可执行文件不在任一允许目录之内（按路径边界比较，防止
+  `C:\Program Files Evil`；macOS 比较区分大小写）。
 - 参数包含 NUL。
 - 环境变量名为空、包含 `=` 或 NUL，或值包含 NUL。
 - 环境变量名仅大小写不同地重复。
 - 工作目录为空、不是绝对路径、不存在或不是目录。
-- 数据目录为空、不是绝对路径、不存在、不是目录，或过于宽泛（卷根、用户主目录等）。
+- 数据目录为空、不是绝对路径、不存在、不是目录，或过于宽泛（卷根、用户主目录
+  等；macOS 另外拒绝 `/`、`/Users`、`/Applications`、`/Library`、`/System`、
+  `/private`、`/var`、`/tmp`、`/Volumes` 与 `$HOME` 本身，但允许其子目录）。
 - 额外访问根目录过于宽泛，或与数据目录重复。
 - `killOnClose` 为 `false`。
 - `maxProcesses` 或 `memoryLimitBytes` 为 0。
@@ -178,7 +187,7 @@ Process Runtime 在触达操作系统前必须拒绝以下请求（TS 校验器�
 | --- | --- | --- |
 | `packages/contracts` | 消息形状、生成类型、运行时校验、fixtures | 传输、进程创建、策略裁决 |
 | Desktop（Electron） | 传输实现、请求/响应校验、UI 文案、进程身份缓存 | 修改协议形状、绕过运行时策略 |
-| Browser Adapter | 把浏览器侧调用映射为协议消息、校验响应、暴露能力缺口 | 直接调用 Windows API、伪造能力 |
+| Browser Adapter | 把浏览器侧调用映射为协议消息、校验响应、暴露能力缺口 | 直接调用平台 API、伪造能力 |
 | `crates/process-runtime` | 实际能力探测、创建进程、隔离与策略执行、权威校验 | 选择传输方式、定义 UI |
 
 Browser Adapter 不需要依赖进程创建细节；它应检查 `CapabilityReport`，在能力

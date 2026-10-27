@@ -13,6 +13,9 @@ import path from "node:path";
 
 import { BrowserAdapterError } from "../domain/errors.js";
 import type { ProfileLayout } from "../domain/environment.js";
+import { isPathInside } from "../platform/paths.js";
+
+export { isPathInside };
 
 const PROFILE_MARKER = "virealm-profile.json";
 const MARKER_VERSION = 1;
@@ -50,30 +53,48 @@ export function resolveProfileLayout(
   return { environmentRoot, userDataDir };
 }
 
-/** True when `candidate` is `parent` or lives below it (case-insensitive). */
-export function isPathInside(parent: string, candidate: string): boolean {
-  const normalizedParent = path.resolve(parent).toLowerCase();
-  const normalizedCandidate = path.resolve(candidate).toLowerCase();
-  const relative = path.relative(normalizedParent, normalizedCandidate);
-  return (
-    relative === "" ||
-    (!relative.startsWith("..") && !path.isAbsolute(relative))
-  );
+export interface DefaultChromeProfileRoots {
+  /** Windows: usually `%LOCALAPPDATA%`. */
+  readonly localAppData?: string | undefined;
+  /** macOS: the user's home directory. */
+  readonly homeDirectory?: string | undefined;
+  /** Path semantics to compare with. Defaults to the current platform. */
+  readonly platform?: string | undefined;
 }
 
-/** Reject Chrome's own default profile roots. */
+/** Reject Chrome's own default profile roots on the current platform. */
 export function isDefaultChromeProfilePath(
   candidate: string,
-  localAppData: string | undefined,
+  roots: DefaultChromeProfileRoots = {},
 ): boolean {
-  if (localAppData === undefined) {
-    return false;
+  const platform = roots.platform ?? process.platform;
+  const defaults: string[] = [];
+
+  if (platform === "win32") {
+    const localAppData = roots.localAppData;
+    if (localAppData !== undefined) {
+      defaults.push(
+        path.win32.join(localAppData, "Google", "Chrome", "User Data"),
+        path.win32.join(localAppData, "Chromium", "User Data"),
+      );
+    }
+  } else {
+    const home = roots.homeDirectory;
+    if (home !== undefined) {
+      const applicationSupport = path.posix.join(
+        home,
+        "Library",
+        "Application Support",
+      );
+      defaults.push(
+        path.posix.join(applicationSupport, "Google", "Chrome"),
+        path.posix.join(applicationSupport, "Chromium"),
+        path.posix.join(applicationSupport, "Google", "Chrome Canary"),
+      );
+    }
   }
-  const defaults = [
-    path.join(localAppData, "Google", "Chrome", "User Data"),
-    path.join(localAppData, "Chromium", "User Data"),
-  ];
-  return defaults.some((root) => isPathInside(root, candidate));
+
+  return defaults.some((root) => isPathInside(root, candidate, platform));
 }
 
 /**

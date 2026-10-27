@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import {
   BrowserAdapterError,
   type BrowserEnvironmentConfig,
@@ -23,7 +25,13 @@ import type { EnvironmentStore } from "../../../src/main/persistence/environment
 import type { AdapterPort } from "../../../src/main/services/environment-service.js";
 import type { ProfileCleanup } from "../../../src/main/services/profile-cleanup.js";
 
-export const TEST_DATA_ROOT = "C:\\virealm-test-data";
+/** Absolute on the host platform, so path checks behave as in production. */
+export const TEST_DATA_ROOT = path.resolve("virealm-test-data");
+export const TEST_CHROME_PATH = path.join(
+  TEST_DATA_ROOT,
+  "Chrome",
+  "chrome.exe",
+);
 
 export class MemoryFiles implements FileOperations {
   readonly files = new Map<string, string>();
@@ -147,7 +155,7 @@ export class FakeAdapter implements AdapterPort {
   statuses = new Map<string, EnvironmentStatus>();
   discovered: DiscoveredBrowser[] = [
     {
-      executablePath: "C:\\Chrome\\chrome.exe",
+      executablePath: TEST_CHROME_PATH,
       version: "156.0.0.0",
       source: "system",
     },
@@ -385,7 +393,7 @@ export function recordFor(options: RecordOptions = {}): EnvironmentRecord {
     createdAtUnixMs: options.createdAt ?? 1_000,
     updatedAtUnixMs: options.updatedAt ?? 1_000,
     pendingRestart: options.pendingRestart ?? false,
-    dataDir: `${dataRoot}\\environments\\${id}\\chrome-data`,
+    dataDir: path.join(dataRoot, "environments", id, "chrome-data"),
   };
 }
 

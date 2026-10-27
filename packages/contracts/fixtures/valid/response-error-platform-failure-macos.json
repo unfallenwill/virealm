@@ -1,0 +1,15 @@
+{
+  "protocolVersion": 2,
+  "requestId": "req_launch_macos_002",
+  "method": "process.launch",
+  "ok": false,
+  "error": {
+    "code": "platform_failure",
+    "message": "posix_spawn failed (errno 13): Permission denied.",
+    "retryable": false,
+    "details": {
+      "operation": "posix_spawn",
+      "errno": 13
+    }
+  }
+}

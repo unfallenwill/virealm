@@ -4,14 +4,14 @@
 环境分配独立的持久化 Profile，通过 CDP 应用并**读取回来验证**时区、语言、
 视口等页面级配置，并对上层暴露稳定的 TypeScript API。
 
-本包不创建操作系统进程，也不直接调用 Win32 API：
+本包不创建操作系统进程，也不直接调用 Win32 / POSIX API：
 
 ```
 BrowserAdapter
   → ProcessRuntimeClient (TypeScript)
-  → Windows named pipe (newline-delimited JSON, protocol v2)
+  → Windows named pipe / macOS Unix domain socket (newline-delimited JSON, protocol v2)
   → virealm-runtime serve (Rust)
-  → Chrome (Job Object / 受限令牌 / AppContainer)
+  → Chrome (Job Object / 进程组 / 受限令牌 / AppContainer)
 ```
 
 `RuntimeHost` 只用于 demo 与集成测试启动 runtime daemon 本身；它从不启动浏览器。
@@ -31,7 +31,9 @@ import { BrowserAdapter } from "@virealm/browser-adapter";
 
 const adapter = new BrowserAdapter({
   dataRoot: "C:\\Users\\me\\AppData\\Local\\Virealm",
-  // 省略 runtime 时连接默认管道；也可注入已有 RuntimePort 或 runtimePipePath。
+  // macOS 上为 <home>/Library/Application Support/Virealm。
+  // 省略 runtime 时连接默认端点（命名管道或 Unix socket）；也可注入已有
+  // RuntimePort 或 runtimePipePath。
 });
 ```
 
@@ -59,6 +61,7 @@ const config = {
   name: "Work US",
   browser: {
     executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    // macOS: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     version: "156.0.8078.48",    // 声明版本，启动后与 CDP 报告核对
   },
   timezone: "America/Los_Angeles",
@@ -93,6 +96,12 @@ const verified = await adapter.verifyEnvironmentConfig("work-us");
 - `--no-sandbox`、`--disable-web-security`、`--user-data-dir`、`--lang` 等保留开关
   由配置注入时会被拒绝；适配器不会为了兼容性降低安全等级。
 - runtime 能力不满足声明的隔离策略时直接失败（`unsupported_isolation`），不降级。
+- macOS 上允许的程序目录是 `.app` 包根（`/Applications/Google Chrome.app`），
+  可执行文件是 `Contents/MacOS/Google Chrome`；默认 Profile 根是
+  `~/Library/Application Support/Google/Chrome`（区分子目录按包名类推）。
+- macOS 只接受 `managed`；声明 `restricted` / `app_container`，或声明
+  `maxProcesses` / `memoryLimitBytes`，会在启动前以 `unsupported_isolation` /
+  `invalid_configuration` 失败。运行时仍会兜底拒绝，不静默丢弃这些约束。
 - 启动失败会终止已创建的 Chrome，但不会删除 Profile。
 
 ### Chromium 与受限令牌 / AppContainer
@@ -124,6 +133,12 @@ Chromium 构建而变——本机 Chrome 156.0.8078.48 报 `0x80000003`，CI 运
 的手段绕过这个限制——那等于放弃隔离本身。详见
 `docs/known-limitations.md` §1.1。
 
+macOS 没有 `restricted` 与 `app_container` 的实现：运行时能力报告会把这两个
+Windows 键报为 `unsupported`，适配器在启动前直接抛出 `unsupported_isolation`
+（detail 标明 Windows 专属），不会把它们当作 `managed` 降级执行。macOS 的
+`managed` 是 POSIX 进程组，只约束生命周期；它不限制文件或网络，子进程可以
+`setsid` 离开进程组（§1.2）。
+
 ## 配置验证的含义
 
 | 字段 | 应用方式 | 验证读取 |
@@ -147,7 +162,7 @@ Chromium 构建而变——本机 Chrome 156.0.8078.48 报 `0x80000003`，CI 运
 # 单元测试 + 覆盖率（核心逻辑阈值 90%）
 corepack pnpm --filter @virealm/browser-adapter test
 
-# 真实 Chrome + 真实 Rust runtime 集成测试（Windows）
+# 真实 Chrome + 真实 Rust runtime 集成测试（Windows / macOS）
 cargo build -p virealm-process-runtime --bin virealm-runtime
 corepack pnpm --filter @virealm/browser-adapter test:integration
 
@@ -155,13 +170,14 @@ corepack pnpm --filter @virealm/browser-adapter test:integration
 corepack pnpm --filter @virealm/browser-adapter demo
 ```
 
-集成测试使用独立命名管道和自己的 runtime daemon，只访问本地受控 HTTP 页面，
-不依赖真实账号或外部站点。它覆盖：发现、经 runtime 启动、独立 Profile、CDP
-连接、时区/语言/视口/Accept-Language 验证、目标创建与导航、断开重连、优雅与
-强制停止、进程树清理、异常退出、重启后 Cookie/localStorage 持久化、双环境隔离
-以及安全参数检查。
+集成测试使用独立端点（Windows 命名管道、macOS 临时 Unix socket）和自己的 runtime
+daemon，只访问本地受控 HTTP 页面，不依赖真实账号或外部站点。它覆盖：发现、经
+runtime 启动、独立 Profile、CDP 连接、时区/语言/视口/Accept-Language 验证、目标
+创建与导航、断开重连、优雅与强制停止、进程树清理、异常退出、重启后
+Cookie/localStorage 持久化、双环境隔离以及安全参数检查。
 
-缺少 Chrome 或未构建 runtime 时，集成测试会明确失败并提示原因，而不是静默跳过。
+缺少 Chrome 或未构建 runtime 时，集成测试会明确失败并提示原因，而不是静默跳过；
+CI 另设 `VIREALM_REQUIRE_INTEGRATION=1`，让前置条件缺失无法被误读为通过。
 
 ## Demo
 
@@ -178,8 +194,10 @@ corepack pnpm --filter @virealm/browser-adapter demo
 
 ## 已知限制
 
-- `managed` 是 Job Object 生命周期约束，不是沙箱；真正的文件/网络隔离依赖
-  `restricted` 或 `app_container`（由 runtime 能力决定）。
+- `managed` 是生命周期约束，不是沙箱：Windows 为 Job Object，macOS 为 POSIX
+  进程组。真正的文件/网络隔离依赖 `restricted` 或 `app_container`（仅 Windows，
+  且 Chrome 无法在这两种模式下启动）。macOS 的进程组可以被子进程 `setsid` 逃逸，
+  运行时被 `SIGKILL` 时也没有内核级杀树。
 - 时区、语言、视口、地理位置都是 CDP 模拟，不是操作系统级设置；页面之外
   （下载管理、浏览器 UI 等）不在覆盖范围内。
 - `screen.width/height` 反映宿主显示器，不是模拟视口。

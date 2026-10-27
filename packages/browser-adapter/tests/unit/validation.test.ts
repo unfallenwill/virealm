@@ -304,25 +304,46 @@ describe("validateEnvironment", () => {
 
   it("refuses Chrome's default profile directory", () => {
     const root = mkdtempSync(path.join(tmpdir(), "virealm-default-profile-"));
-    const ctx = context(new FakeDiscovery(), root);
+    const homeDirectory = path.join(root, "home");
+    const chromeLocalAppData = path.join(root, "local-app-data");
+    const ctx: ValidationContext = {
+      dataRoot: root,
+      discovery: new FakeDiscovery(),
+      localAppData: chromeLocalAppData,
+      homeDirectory,
+      platform: process.platform,
+    };
+    const userDataDir =
+      process.platform === "win32"
+        ? path.join(chromeLocalAppData, "Google", "Chrome", "User Data")
+        : path.join(
+            homeDirectory,
+            "Library",
+            "Application Support",
+            "Google",
+            "Chrome",
+          );
     const result = validateEnvironment(
       makeConfig({
-        browser: {
-          executablePath: TEST_CHROME,
-          userDataDir: path.join(localAppData, "Google", "Chrome", "User Data"),
-        },
+        browser: { executablePath: TEST_CHROME, userDataDir },
       }),
       ctx,
     );
     expect(result.valid).toBe(false);
-    expect(result.issues.map((issue) => issue.code)).toContain("invalid_path");
+    expect(result.issues.map((issue) => issue.message)).toContain(
+      "Chrome's default profile directory cannot be used for remote debugging",
+    );
   });
 
   it("reports a missing explicit Chrome executable", () => {
     const issues = issuesOf(
       makeConfig({
         browser: {
-          executablePath: "C:\\Missing\\chrome.exe",
+          executablePath: path.join(
+            tmpdir(),
+            "virealm-missing-chrome",
+            "chrome.exe",
+          ),
         },
       }),
     );

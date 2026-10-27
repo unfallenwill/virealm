@@ -7,7 +7,7 @@
 
 use std::ffi::c_void;
 use std::mem::size_of;
-use std::os::windows::io::AsRawHandle;
+use std::os::windows::io::{AsRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -197,12 +197,60 @@ pub(crate) fn launch(spec: &PreparedLaunchSpec) -> Result<ManagedProcess> {
 
     Ok(ManagedProcess::new(
         id,
-        Some(job.into_handle()),
-        process,
+        Handle::new(Some(job.into_handle()), process),
         applied,
         ProcessState::Running { pid: id.pid },
         diagnostics,
     ))
+}
+
+/// Owned Windows handles for one managed process.
+///
+/// Field order is load-bearing: the job handle must close before the process
+/// handle so `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` terminates the tree even on
+/// drop.
+#[derive(Debug)]
+pub(crate) struct Handle {
+    job: Option<OwnedHandle>,
+    process: OwnedHandle,
+}
+
+impl Handle {
+    pub(crate) fn new(job: Option<OwnedHandle>, process: OwnedHandle) -> Self {
+        Self { job, process }
+    }
+
+    pub(crate) fn status(
+        &self,
+        id: ProcessId,
+        applied: &AppliedIsolation,
+    ) -> Result<ProcessStatus> {
+        query_status(self.process.as_raw_handle().cast(), id, applied)
+    }
+
+    pub(crate) fn wait(
+        &mut self,
+        id: ProcessId,
+        applied: &AppliedIsolation,
+        timeout: Duration,
+    ) -> Result<ProcessStatus> {
+        wait_for_status(self.process.as_raw_handle().cast(), id, applied, timeout)
+    }
+
+    pub(crate) fn terminate(
+        &mut self,
+        id: ProcessId,
+        applied: &AppliedIsolation,
+    ) -> Result<ProcessStatus> {
+        terminate_and_wait(
+            self.job
+                .as_ref()
+                .map(|handle| handle.as_raw_handle().cast()),
+            self.process.as_raw_handle().cast(),
+            id,
+            applied,
+        )
+    }
 }
 
 /// Query a process without waiting.
@@ -507,6 +555,9 @@ fn verify_isolation(spec: &PreparedLaunchSpec, process: HANDLE) -> Result<Applie
         file_access_restricted: mode == IsolationMode::AppContainer,
         network_access: spec.policy.network_access,
         network_capabilities_verified,
+        process_group_attached: None,
+        process_group_id: None,
+        kill_on_close_armed: None,
     })
 }
 
@@ -715,11 +766,11 @@ fn prerequisite(operation: &str, error: RuntimeError) -> RuntimeError {
 }
 
 fn io_error(operation: &str, error: &std::io::Error) -> RuntimeError {
-    RuntimeError::PlatformFailure {
-        operation: operation.to_owned(),
-        code: error.raw_os_error().unwrap_or(0) as u32,
-        message: error.to_string(),
-    }
+    RuntimeError::platform_failure(
+        operation,
+        error.raw_os_error().unwrap_or(0) as u32,
+        error.to_string(),
+    )
 }
 
 #[cfg(test)]

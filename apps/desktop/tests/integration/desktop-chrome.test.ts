@@ -19,21 +19,33 @@ import { DesktopEnvironmentService } from "../../src/main/services/environment-s
 import { SafeProfileCleanup } from "../../src/main/services/profile-cleanup.js";
 import type { EnvironmentDraft } from "../../src/shared/contracts.js";
 
+const runtimeFileName =
+  process.platform === "win32" ? "virealm-runtime.exe" : "virealm-runtime";
 const runtimeExecutable =
   process.env.VIREALM_RUNTIME_EXECUTABLE ??
   fileURLToPath(
-    new URL("../../../../target/debug/virealm-runtime.exe", import.meta.url),
+    new URL(`../../../../target/debug/${runtimeFileName}`, import.meta.url),
   );
 
-const baseAvailable =
-  process.platform === "win32" && existsSync(runtimeExecutable);
+const supportedPlatform =
+  process.platform === "win32" || process.platform === "darwin";
+
+/** Named pipe on Windows, Unix domain socket elsewhere. */
+function runtimeEndpoint(prefix: string): string {
+  const unique = `${prefix}-${randomUUID().slice(0, 8)}`;
+  return process.platform === "win32"
+    ? String.raw`\\.\pipe\${unique}`
+    : path.join(tmpdir(), `${unique}.sock`);
+}
+
+const baseAvailable = supportedPlatform && existsSync(runtimeExecutable);
 
 // Discovery needs no live runtime; the throwaway adapter only proves Chrome is
 // installed before the harness declares itself available.
 const probeAdapter = baseAvailable
   ? new BrowserAdapter({
       dataRoot: path.join(tmpdir(), "virealm-probe-unused"),
-      runtimePipePath: String.raw`\\.\pipe\virealm-probe-${randomUUID()}`,
+      runtimePipePath: runtimeEndpoint("virealm-probe"),
     })
   : undefined;
 
@@ -71,7 +83,7 @@ beforeAll(async () => {
   }
   const root = await mkdtemp(path.join(tmpdir(), "virealm-desktop-int-"));
   const dataRoot = path.join(root, "data");
-  const pipePath = String.raw`\\.\pipe\virealm-desktop-int-${randomUUID().slice(0, 8)}`;
+  const pipePath = runtimeEndpoint("virealm-desktop-int");
   const host = await RuntimeHost.start({
     executablePath: runtimeExecutable,
     pipePath,
@@ -131,15 +143,21 @@ function platform(): Harness {
 }
 
 describe("integration prerequisites", () => {
-  it("has a Windows runtime binary and a local Chrome", () => {
-    expect(process.platform).toBe("win32");
+  it("fails instead of skipping when the gate is required", () => {
+    if (process.env.VIREALM_REQUIRE_INTEGRATION === "1") {
+      expect(available).toBe(true);
+    }
+  });
+
+  it("has a host runtime binary and a local Chrome", () => {
+    expect(supportedPlatform).toBe(true);
     expect(
       existsSync(runtimeExecutable),
       `build the runtime first: cargo build -p virealm-process-runtime --bin virealm-runtime (missing ${runtimeExecutable})`,
     ).toBe(true);
     expect(
       chromeAvailable,
-      "Chrome was not found in a standard Windows install location",
+      "Chrome was not found in a standard install location",
     ).toBe(true);
   });
 });
@@ -218,11 +236,15 @@ describe.skipIf(!available)("desktop with real runtime and Chrome", () => {
     // A restart-required field: the running browser keeps the old Job Object
     // until the environment is restarted. The isolation mode is deliberately
     // not used here — the desktop refuses the modes Chromium cannot run in.
+    const restartField =
+      process.platform === "win32"
+        ? "runtimePolicy.maxProcesses"
+        : "launch.additionalArguments";
     const restart = await h.service.update(
       first.id,
-      draftWithMaxProcesses("集成环境 A", "Europe/Berlin", 8),
+      restartDraft("集成环境 A", "Europe/Berlin"),
     );
-    expect(restart.restartFields).toContain("runtimePolicy.maxProcesses");
+    expect(restart.restartFields).toContain(restartField);
     expect(restart.environment.pendingRestart).toBe(true);
 
     const firstStopped = await h.service.stop(first.id, { force: false });
@@ -258,10 +280,13 @@ describe.skipIf(!available)("desktop with real runtime and Chrome", () => {
   }, 170_000);
 });
 
-function draftWithMaxProcesses(
+/**
+ * A change that only takes effect after a restart. Windows accepts per-tree
+ * limits; macOS refuses them, so it changes the launch arguments instead.
+ */
+function restartDraft(
   name: string,
   timezone: string,
-  maxProcesses: number,
 ): {
   readonly name: string;
   readonly browser: { readonly executablePath: string };
@@ -270,7 +295,7 @@ function draftWithMaxProcesses(
   readonly viewport: { readonly width: number; readonly height: number };
   readonly runtimePolicy: {
     readonly isolation: "managed";
-    readonly maxProcesses: number;
+    readonly maxProcesses?: number;
   };
   readonly launch: { readonly additionalArguments: readonly string[] };
 } {
@@ -278,12 +303,21 @@ function draftWithMaxProcesses(
   return {
     name,
     browser: {
-      executablePath: chrome?.executablePath ?? "C:\\missing-chrome.exe",
+      executablePath:
+        chrome?.executablePath ?? path.join(tmpdir(), "missing-chrome"),
     },
     timezone,
     locale: "zh-CN",
     viewport: { width: 1280, height: 800 },
-    runtimePolicy: { isolation: "managed", maxProcesses },
-    launch: { additionalArguments: ["--headless=new"] },
+    runtimePolicy:
+      process.platform === "win32"
+        ? { isolation: "managed", maxProcesses: 8 }
+        : { isolation: "managed" },
+    launch: {
+      additionalArguments:
+        process.platform === "win32"
+          ? ["--headless=new"]
+          : ["--headless=new", "--disable-gpu"],
+    },
   };
 }

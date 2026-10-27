@@ -3,6 +3,7 @@ import type {
   EnvironmentPhase,
   EnvironmentView,
 } from "../../shared/contracts.js";
+import { isMacosPlatform } from "../../shared/isolation.js";
 
 export function phaseLabel(phase: EnvironmentPhase): string {
   switch (phase) {
@@ -207,17 +208,17 @@ export function configValue(value: unknown): string {
   }
 }
 
-export function isolationLabel(mode: string): string {
-  switch (mode) {
-    case "managed":
-      return "Job Object 包含";
-    case "restricted":
-      return "受限令牌";
-    case "app_container":
-      return "AppContainer";
-    default:
-      return mode;
+export function isolationLabel(mode: string, platformOs?: string): string {
+  if (mode === "managed") {
+    return isMacosPlatform(platformOs) ? "进程组管理" : "Job Object 包含";
   }
+  if (mode === "restricted") {
+    return "受限令牌";
+  }
+  if (mode === "app_container") {
+    return "AppContainer";
+  }
+  return mode;
 }
 
 export async function copyText(value: string): Promise<boolean> {

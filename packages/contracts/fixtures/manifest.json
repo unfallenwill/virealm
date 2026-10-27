@@ -3,6 +3,7 @@
   "valid": [
     { "file": "valid/request-get-capabilities.json", "kind": "request" },
     { "file": "valid/request-launch-managed.json", "kind": "request" },
+    { "file": "valid/request-launch-macos.json", "kind": "request" },
     { "file": "valid/request-launch-app-container.json", "kind": "request" },
     { "file": "valid/request-get-status.json", "kind": "request" },
     { "file": "valid/request-terminate.json", "kind": "request" },
@@ -17,9 +18,15 @@
       "file": "valid/response-error-platform-failure.json",
       "kind": "response"
     },
+    {
+      "file": "valid/response-error-platform-failure-macos.json",
+      "kind": "response"
+    },
     { "file": "valid/response-error-unknown-method.json", "kind": "response" },
     { "file": "valid/capability-report.json", "kind": "capability" },
+    { "file": "valid/capability-report-macos.json", "kind": "capability" },
     { "file": "valid/process-status-running.json", "kind": "status" },
+    { "file": "valid/process-status-macos.json", "kind": "status" },
     { "file": "valid/process-status-exited.json", "kind": "status" },
     {
       "file": "valid/contract-error-unsupported-version.json",
@@ -218,6 +225,20 @@
         "path": "/",
         "keyword": "required",
         "missingProperty": "eventId"
+      }
+    },
+    {
+      "file": "invalid/contract-error-platform-both-codes.json",
+      "kind": "response",
+      "expect": { "path": "/details", "keyword": "contractSemantics" }
+    },
+    {
+      "file": "invalid/capability-macos-missing-job-object.json",
+      "kind": "capability",
+      "expect": {
+        "path": "/",
+        "keyword": "required",
+        "missingProperty": "jobObject"
       }
     },
     {

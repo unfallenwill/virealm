@@ -54,6 +54,7 @@ pub fn probe() -> CapabilityReport {
         platform: PlatformInfo {
             os: "windows".to_owned(),
             version,
+            os_version: None,
             architecture: version::architecture(),
             elevated,
             integrity_level,
@@ -66,6 +67,8 @@ pub fn probe() -> CapabilityReport {
         etw: Capability::not_verified(
             "ETW-based observation is not implemented in this build".to_owned(),
         ),
+        process_group: None,
+        resource_limits: None,
         notes,
     }
 }
@@ -255,11 +258,11 @@ fn classify(error: &RuntimeError, operation: &str) -> Capability {
 }
 
 fn io_error(operation: &str, error: &std::io::Error) -> RuntimeError {
-    RuntimeError::PlatformFailure {
-        operation: operation.to_owned(),
-        code: error.raw_os_error().unwrap_or(0) as u32,
-        message: error.to_string(),
-    }
+    RuntimeError::platform_failure(
+        operation,
+        error.raw_os_error().unwrap_or(0) as u32,
+        error.to_string(),
+    )
 }
 
 fn probe_directory(label: &str) -> PathBuf {

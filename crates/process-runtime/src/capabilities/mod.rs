@@ -76,14 +76,22 @@ impl Capability {
     }
 }
 
-/// Windows version reported by `RtlGetVersion`.
+/// Operating system version.
+///
+/// Windows reports major/minor/build from `RtlGetVersion`. macOS reports
+/// major/minor/patch from `kern.osproductversion`, with the patch component
+/// carried in `build`; [`PlatformInfo::os_version`] carries the exact product
+/// string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WindowsVersion {
+pub struct PlatformVersion {
     pub major: u32,
     pub minor: u32,
     pub build: u32,
 }
+
+/// Historical name kept for existing callers. Windows reports the same shape.
+pub type WindowsVersion = PlatformVersion;
 
 /// Integrity level of a token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,11 +111,22 @@ pub enum IntegrityLevel {
 #[serde(rename_all = "camelCase")]
 pub struct PlatformInfo {
     pub os: String,
-    pub version: WindowsVersion,
+    pub version: PlatformVersion,
+    /// Exact product version string, when the platform reports one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub os_version: Option<String>,
     pub architecture: String,
     /// Whether the calling process token is elevated.
     pub elevated: bool,
     pub integrity_level: IntegrityLevel,
+}
+
+/// Availability of per-process-tree resource limits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceLimits {
+    pub max_processes: Capability,
+    pub memory_limit: Capability,
 }
 
 /// Snapshot of the primitives available on this machine.
@@ -122,6 +141,12 @@ pub struct CapabilityReport {
     pub restricted_token: Capability,
     pub process_mitigation: Capability,
     pub etw: Capability,
+    /// POSIX process-group lifecycle containment (macOS).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_group: Option<Capability>,
+    /// Per-tree process and memory limits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_limits: Option<ResourceLimits>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }

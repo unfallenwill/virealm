@@ -1,3 +1,6 @@
+import { tmpdir } from "node:os";
+import path from "node:path";
+
 import type { IpcMainInvokeEvent } from "electron";
 import { describe, expect, it, vi } from "vitest";
 
@@ -32,17 +35,20 @@ function view(): EnvironmentView {
 const appInfo: AppInfoView = {
   name: "Virealm",
   version: "0.1.0",
-  userDataDir: "C:\\data",
-  dataRoot: "C:\\data\\data",
-  runtimeExecutable: "C:\\runtime.exe",
+  userDataDir: path.join(tmpdir(), "virealm-data"),
+  dataRoot: path.join(tmpdir(), "virealm-data", "data"),
+  runtimeExecutable: path.join(tmpdir(), "virealm-runtime"),
   electronVersion: "45",
   chromeVersion: "156",
 };
 
 const runtimeView: RuntimeStatusView = {
   available: true,
-  pipePath: "\\\\.\\pipe\\test",
-  executablePath: "C:\\runtime.exe",
+  pipePath:
+    process.platform === "win32"
+      ? String.raw`\\.\pipe\test`
+      : path.join(tmpdir(), "virealm-runtime.sock"),
+  executablePath: path.join(tmpdir(), "virealm-runtime"),
   error: undefined,
   platform: { os: "windows", architecture: "x86_64", elevated: false },
   isolation: [],

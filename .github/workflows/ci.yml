@@ -48,6 +48,29 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 
+  runtime-macos:
+    name: Process Runtime (macOS arm64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      # The packaging target is arm64 and the runtime is built natively, so a
+      # runner with a different architecture would hide a real mismatch.
+      - name: Require an arm64 runner
+        run: test "$(uname -m)" = "arm64"
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - name: Probe the macOS backend
+        run: |
+          cargo run -q -p virealm-process-runtime --bin virealm-runtime -- probe |
+            tee /tmp/virealm-probe.json
+          jq -e '.capabilities.platform.os == "macos"' /tmp/virealm-probe.json
+          jq -e '.capabilities.processGroup.state == "supported"' /tmp/virealm-probe.json
+          jq -e '.capabilities.jobObject.state == "unsupported"' /tmp/virealm-probe.json
+
   browser-adapter:
     name: Browser Adapter (Windows, real Chrome)
     runs-on: windows-latest
@@ -87,6 +110,38 @@ jobs:
       # builds, and the runner's value is evidence for that.
       - run: pnpm --filter @virealm/browser-adapter exec vitest run --config vitest.integration.config.ts --reporter=verbose
 
+  browser-adapter-macos:
+    name: Browser Adapter (macOS arm64, real Chrome)
+    runs-on: macos-latest
+    env:
+      # A skipped prerequisite must fail the gate, not silently pass it.
+      VIREALM_REQUIRE_INTEGRATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Require an arm64 runner
+        run: test "$(uname -m)" = "arm64"
+      - run: pnpm install --frozen-lockfile
+      - run: cargo build -p virealm-process-runtime --bin virealm-runtime
+      - name: Verify Chrome is installed
+        run: test -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+      - run: pnpm contracts:build
+      - run: pnpm runtime-client:build
+      - run: pnpm adapter:lint
+      - run: pnpm adapter:format:check
+      - run: pnpm adapter:typecheck
+      - run: pnpm adapter:test
+      - run: pnpm adapter:build
+      - run: pnpm --filter @virealm/browser-adapter exec vitest run --config vitest.integration.config.ts --reporter=verbose
+
   desktop:
     name: Desktop (Windows, Electron + real Chrome)
     runs-on: windows-latest
@@ -123,3 +178,68 @@ jobs:
       - run: pnpm desktop:test
       - run: pnpm desktop:build
       - run: pnpm desktop:test:integration
+
+  desktop-macos:
+    name: Desktop (macOS arm64, Electron + real Chrome)
+    runs-on: macos-latest
+    env:
+      VIREALM_REQUIRE_INTEGRATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Require an arm64 runner
+        run: test "$(uname -m)" = "arm64"
+      - run: pnpm install --frozen-lockfile
+      - run: cargo build -p virealm-process-runtime --bin virealm-runtime
+      - name: Verify Chrome is installed
+        run: test -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+      - run: pnpm contracts:build
+      - run: pnpm runtime-client:build
+      - run: pnpm adapter:build
+      - run: pnpm desktop:lint
+      - run: pnpm desktop:format:check
+      - run: pnpm desktop:typecheck
+      - run: pnpm desktop:test
+      - run: pnpm desktop:build
+      - run: pnpm desktop:test:integration
+
+  desktop-package-macos:
+    name: Desktop package (macOS arm64)
+    runs-on: macos-latest
+    # First runs of the .app packaging are informative while the Electron
+    # runner image is new; the rest of the macOS gates stay blocking.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Require an arm64 runner
+        run: test "$(uname -m)" = "arm64"
+      - run: pnpm install --frozen-lockfile
+      - run: cargo build --release -p virealm-process-runtime --bin virealm-runtime
+      - run: pnpm contracts:build
+      - run: pnpm runtime-client:build
+      - run: pnpm adapter:build
+      - run: pnpm desktop:build
+      - run: pnpm desktop:package
+      - name: Verify the bundled runtime
+        run: |
+          runtime="apps/desktop/release/mac-arm64/Virealm.app/Contents/Resources/runtime/virealm-runtime"
+          test -x "$runtime"
+          file "$runtime" | grep -q "Mach-O"
+          "$runtime" probe | jq -e '.capabilities.processGroup.state == "supported"'

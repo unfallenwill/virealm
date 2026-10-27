@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -9,6 +15,7 @@ import {
   discoverBrowsers,
   inspectExecutable,
   versionFromInstallPath,
+  versionFromMacBundle,
 } from "../../src/chrome/discovery.js";
 
 const roots: string[] = [];
@@ -49,6 +56,7 @@ describe("discoverBrowsers", () => {
 
     const found = discoverBrowsers({
       roots: { programFiles, localAppData },
+      platform: "win32",
     });
 
     expect(found.map((entry) => entry.executablePath)).toEqual([
@@ -61,7 +69,10 @@ describe("discoverBrowsers", () => {
 
   it("skips empty and missing roots", () => {
     expect(
-      discoverBrowsers({ roots: { programFiles: "", localAppData: "" } }),
+      discoverBrowsers({
+        roots: { programFiles: "", localAppData: "", applicationsRoots: [] },
+        platform: "win32",
+      }),
     ).toEqual([]);
   });
 
@@ -77,7 +88,9 @@ describe("discoverBrowsers", () => {
 
   it("returns nothing when no standard root contains Chrome", () => {
     const programFiles = makeRoot();
-    expect(discoverBrowsers({ roots: { programFiles } })).toEqual([]);
+    expect(
+      discoverBrowsers({ roots: { programFiles }, platform: "win32" }),
+    ).toEqual([]);
   });
 
   it("inspects an explicit executable first and extra candidates next", () => {
@@ -90,6 +103,7 @@ describe("discoverBrowsers", () => {
       executablePath: explicit,
       extraPaths: [extra],
       roots: { programFiles: makeRoot(), localAppData: makeRoot() },
+      platform: "win32",
     });
 
     expect(found).toHaveLength(2);
@@ -110,7 +124,10 @@ describe("discoverBrowsers", () => {
     const launcher = path.join(application, "chrome.exe");
     writeFileSync(launcher, "");
 
-    const found = discoverBrowsers({ roots: { programFiles } });
+    const found = discoverBrowsers({
+      roots: { programFiles },
+      platform: "win32",
+    });
     expect(found).toHaveLength(1);
     expect(found[0]?.version).toBe("unknown");
   });
@@ -120,6 +137,7 @@ describe("discoverBrowsers", () => {
     expect(
       discoverBrowsers({
         roots: { programFiles: path.join(programFiles, "missing") },
+        platform: "win32",
       }),
     ).toEqual([]);
   });
@@ -148,18 +166,226 @@ describe("inspectExecutable", () => {
     const root = makeRoot();
     const executable = path.join(root, "chromium.exe");
     writeFileSync(executable, "");
-    const browser = inspectExecutable(executable, "extra", "1.2.3.4");
+    const browser = inspectExecutable(executable, "extra", "1.2.3.4", "win32");
     expect(browser?.version).toBe("1.2.3.4");
+  });
+});
+
+function installMacChrome(
+  applicationsRoot: string,
+  bundle: string,
+  version: string | undefined,
+  options: { readonly executableBit?: boolean } = {},
+): string {
+  const name = bundle.replace(/\.app$/, "");
+  const executable = path.join(
+    applicationsRoot,
+    bundle,
+    "Contents",
+    "MacOS",
+    name,
+  );
+  mkdirSync(path.dirname(executable), { recursive: true });
+  writeFileSync(executable, "");
+  chmodSync(executable, options.executableBit === false ? 0o644 : 0o755);
+
+  if (version !== undefined) {
+    mkdirSync(
+      path.join(
+        applicationsRoot,
+        bundle,
+        "Contents",
+        "Frameworks",
+        `${name} Framework.framework`,
+        "Versions",
+        version,
+      ),
+      { recursive: true },
+    );
+  }
+  return executable;
+}
+
+describe("macOS app bundles", () => {
+  it("finds bundles in an applications root and reads the framework version", () => {
+    const root = makeRoot();
+    const chrome = installMacChrome(root, "Google Chrome.app", "156.0.8078.48");
+
+    const found = discoverBrowsers({
+      roots: { applicationsRoots: [root], programFiles: undefined },
+      platform: "darwin",
+    });
+
+    expect(found).toHaveLength(1);
+    expect(found[0]?.executablePath).toBe(chrome);
+    expect(found[0]?.version).toBe("156.0.8078.48");
+    expect(found[0]?.source).toBe("applications");
+  });
+
+  it("finds Chromium, Canary and Chrome for Testing side by side", () => {
+    const root = makeRoot();
+    const chromium = installMacChrome(root, "Chromium.app", "155.0.1.1");
+    const canary = installMacChrome(
+      root,
+      "Google Chrome Canary.app",
+      "157.0.2.2",
+    );
+    const cft = installMacChrome(
+      root,
+      "Google Chrome for Testing.app",
+      "156.0.3.3",
+    );
+
+    const found = discoverBrowsers({
+      roots: { applicationsRoots: [root] },
+      platform: "darwin",
+    });
+
+    expect(found.map((entry) => entry.executablePath)).toEqual([
+      chromium,
+      canary,
+      cft,
+    ]);
+  });
+
+  it("falls back to CFBundleShortVersionString when no framework exists", () => {
+    const root = makeRoot();
+    const executable = installMacChrome(root, "Google Chrome.app", undefined);
+    writeFileSync(
+      path.join(root, "Google Chrome.app", "Contents", "Info.plist"),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+  <key>CFBundleShortVersionString</key>
+  <string>157.0.1.0</string>
+</dict></plist>
+`,
+    );
+
+    const browser = inspectExecutable(executable, "test", undefined, "darwin");
+
+    expect(browser?.version).toBe("157.0.1.0");
+  });
+
+  it("requires the executable bit where the host has one", () => {
+    const root = makeRoot();
+    installMacChrome(root, "Google Chrome.app", "156.0.8078.48", {
+      executableBit: false,
+    });
+
+    const found = discoverBrowsers({
+      roots: { applicationsRoots: [root] },
+      platform: "darwin",
+    });
+
+    // Windows cannot represent POSIX execute bits, so its access check is an
+    // existence check. The bundle layout is still exercised on that host.
+    if (process.platform === "win32") {
+      expect(found.map((entry) => entry.executablePath)).toEqual([
+        path.join(
+          root,
+          "Google Chrome.app",
+          "Contents",
+          "MacOS",
+          "Google Chrome",
+        ),
+      ]);
+    } else {
+      expect(found).toEqual([]);
+    }
+  });
+
+  it("rejects a bundle entry that is not a file", () => {
+    const root = makeRoot();
+    const executable = path.join(
+      root,
+      "Google Chrome.app",
+      "Contents",
+      "MacOS",
+      "Google Chrome",
+    );
+    mkdirSync(executable, { recursive: true });
+
+    expect(
+      inspectExecutable(executable, "test", undefined, "darwin"),
+    ).toBeUndefined();
+  });
+
+  it("ignores a missing bundle executable", () => {
+    const root = makeRoot();
+    const missing = path.join(
+      root,
+      "Google Chrome.app",
+      "Contents",
+      "MacOS",
+      "Google Chrome",
+    );
+
+    expect(
+      inspectExecutable(missing, "test", undefined, "darwin"),
+    ).toBeUndefined();
+  });
+
+  it("ignores an applications root that does not exist", () => {
+    expect(
+      discoverBrowsers({
+        roots: { applicationsRoots: [path.join(makeRoot(), "missing")] },
+        platform: "darwin",
+      }),
+    ).toEqual([]);
+  });
+
+  it("ignores an empty applications root", () => {
+    expect(
+      discoverBrowsers({
+        roots: { applicationsRoots: [""] },
+        platform: "darwin",
+      }),
+    ).toEqual([]);
+  });
+
+  it("reports an unknown version when the bundle carries none", () => {
+    const root = makeRoot();
+    const executable = installMacChrome(root, "Google Chrome.app", undefined);
+
+    const browser = inspectExecutable(executable, "test", undefined, "darwin");
+
+    expect(browser?.version).toBe("unknown");
+  });
+
+  it("ignores unrelated entries in the Frameworks directory", () => {
+    const root = makeRoot();
+    const executable = installMacChrome(
+      root,
+      "Google Chrome.app",
+      "156.0.8078.48",
+    );
+    mkdirSync(
+      path.join(root, "Google Chrome.app", "Contents", "Frameworks", "README"),
+      { recursive: true },
+    );
+
+    const browser = inspectExecutable(executable, "test", undefined, "darwin");
+
+    expect(browser?.version).toBe("156.0.8078.48");
+  });
+
+  it("returns no version for a path outside an app bundle", () => {
+    expect(
+      versionFromMacBundle(path.join(makeRoot(), "Google Chrome")),
+    ).toBeUndefined();
   });
 });
 
 describe("version helpers", () => {
   it("reads a version only from a four-part install directory", () => {
     expect(
-      versionFromInstallPath("C:\\Chrome\\Application\\1.2.3.4\\chrome.exe"),
+      versionFromInstallPath(
+        "C:\\Chrome\\Application\\1.2.3.4\\chrome.exe",
+        "win32",
+      ),
     ).toBe("1.2.3.4");
     expect(
-      versionFromInstallPath("C:\\Chrome\\Application\\chrome.exe"),
+      versionFromInstallPath("C:\\Chrome\\Application\\chrome.exe", "win32"),
     ).toBeUndefined();
   });
 
@@ -172,9 +398,9 @@ describe("version helpers", () => {
     writeFileSync(launcher, "");
 
     expect(versionFromInstallPath(launcher)).toBe("156.0.8078.48");
-    expect(inspectExecutable(launcher, "explicit")?.version).toBe(
-      "156.0.8078.48",
-    );
+    expect(
+      inspectExecutable(launcher, "explicit", undefined, "win32")?.version,
+    ).toBe("156.0.8078.48");
   });
 
   it("uses the sibling version for an install whose launcher is only in Application", () => {
@@ -188,7 +414,10 @@ describe("version helpers", () => {
     mkdirSync(path.join(application, "156.0.8078.48"), { recursive: true });
     writeFileSync(path.join(application, "chrome.exe"), "");
 
-    const found = discoverBrowsers({ roots: { programFiles } });
+    const found = discoverBrowsers({
+      roots: { programFiles },
+      platform: "win32",
+    });
     expect(found).toHaveLength(1);
     expect(found[0]?.executablePath).toBe(path.join(application, "chrome.exe"));
     expect(found[0]?.version).toBe("156.0.8078.48");
