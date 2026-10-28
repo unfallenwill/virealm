@@ -109,6 +109,22 @@ try {
         "S-1-15-2-1"
     )
     if (-not (Test-AppContainerReadExecuteAce -Path $installDirectory -Sid $appContainerSid -RequireInheritance)) {
+        # The assertion below is the only signal that the installer's customInstall
+        # grant did not take effect. Dump what actually landed so a CI failure is
+        # diagnosable instead of just "missing ACE".
+        Write-Host "[verify-installer] $installDirectory contains:"
+        Get-ChildItem -LiteralPath $installDirectory |
+            Select-Object -ExpandProperty Name |
+            ForEach-Object { Write-Host "  $_" }
+        Write-Host "[verify-installer] actual ACL:"
+        $icacls = Join-Path $env:WINDIR "System32\icacls.exe"
+        if (Test-Path -LiteralPath $icacls -PathType Leaf) {
+            (& $icacls $installDirectory | Out-String) -split "`r?`n" |
+                Where-Object { $_ -ne "" } |
+                ForEach-Object { Write-Host "  $_" }
+        } else {
+            Write-Host "  icacls.exe not found at $icacls"
+        }
         throw "the install directory lacks an inheritable ALL APPLICATION PACKAGES read/execute ACE"
     }
     foreach ($path in @($appExecutable, $runtime, $appAsar)) {
