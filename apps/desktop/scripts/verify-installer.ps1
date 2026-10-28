@@ -6,6 +6,24 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Get-AclRulesBySid {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    # Ask the ACL for rules keyed by SecurityIdentifier instead of going through
+    # $acl.Access and translating IdentityReference. ALL APPLICATION PACKAGES is
+    # an AppContainer account; NTAccount/SecurityIdentifier.Translate can throw
+    # IdentityNotMappedException for it, and the previous code turned that into
+    # "ACE missing" even when icacls listed the ACE as present.
+    return (Get-Acl -LiteralPath $Path).GetAccessRules(
+        $true,
+        $true,
+        [System.Security.Principal.SecurityIdentifier]
+    )
+}
+
 function Test-AppContainerReadExecuteAce {
     param(
         [Parameter(Mandatory = $true)]
@@ -15,36 +33,75 @@ function Test-AppContainerReadExecuteAce {
         [switch]$RequireInheritance
     )
 
-    $acl = Get-Acl -LiteralPath $Path
-    foreach ($rule in $acl.Access) {
-        if ($rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) {
+    $required = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
+    foreach ($rule in Get-AclRulesBySid -Path $Path) {
+        if (-not (Test-AclRuleMatches -Rule $rule -Sid $Sid -RequiredRights $required -RequireInheritance:$RequireInheritance)) {
             continue
-        }
-        try {
-            $ruleSid = $rule.IdentityReference.Translate(
-                [System.Security.Principal.SecurityIdentifier]
-            )
-        } catch {
-            continue
-        }
-        if ($ruleSid.Value -ne $Sid.Value) {
-            continue
-        }
-        $required = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
-        if (($rule.FileSystemRights -band $required) -ne $required) {
-            continue
-        }
-        if ($RequireInheritance) {
-            if (($rule.InheritanceFlags -band [System.Security.AccessControl.InheritanceFlags]::ContainerInherit) -eq 0) {
-                continue
-            }
-            if (($rule.InheritanceFlags -band [System.Security.AccessControl.InheritanceFlags]::ObjectInherit) -eq 0) {
-                continue
-            }
         }
         return $true
     }
     return $false
+}
+
+function Test-AclRuleMatches {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Rule,
+        [Parameter(Mandatory = $true)]
+        [System.Security.Principal.SecurityIdentifier]$Sid,
+        [Parameter(Mandatory = $true)]
+        [System.Security.AccessControl.FileSystemRights]$RequiredRights,
+        [switch]$RequireInheritance
+    )
+
+    if ($Rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) {
+        return $false
+    }
+    if ($Rule.IdentityReference.Value -ne $Sid.Value) {
+        return $false
+    }
+    if (($Rule.FileSystemRights -band $RequiredRights) -ne $RequiredRights) {
+        return $false
+    }
+    if ($RequireInheritance) {
+        $inheritance = [System.Security.AccessControl.InheritanceFlags]
+        if (($Rule.InheritanceFlags -band $inheritance::ContainerInherit) -eq 0) {
+            return $false
+        }
+        if (($Rule.InheritanceFlags -band $inheritance::ObjectInherit) -eq 0) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Write-AclDiagnostics {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [System.Security.Principal.SecurityIdentifier]$Sid
+    )
+
+    Write-Host "[verify-installer] ACL rules parsed from $Path :"
+    $rules = @(Get-AclRulesBySid -Path $Path)
+    if ($rules.Count -eq 0) {
+        Write-Host "  (no rules returned)"
+        return
+    }
+    $required = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
+    foreach ($rule in $rules) {
+        $sidMatch = $rule.IdentityReference.Value -eq $Sid.Value
+        $rightsMatch = ($rule.FileSystemRights -band $required) -eq $required
+        Write-Host ("  {0} sid={1} rights={2} inheritance={3} inherited={4} sidMatch={5} rxMatch={6}" -f `
+                $rule.AccessControlType,
+            $rule.IdentityReference.Value,
+            $rule.FileSystemRights,
+            $rule.InheritanceFlags,
+            $rule.IsInherited,
+            $sidMatch,
+            $rightsMatch)
+    }
 }
 
 $installers = @(
@@ -109,6 +166,23 @@ try {
         "S-1-15-2-1"
     )
     if (-not (Test-AppContainerReadExecuteAce -Path $installDirectory -Sid $appContainerSid -RequireInheritance)) {
+        # The assertion below is the only signal that the installer's customInstall
+        # grant did not take effect. Dump what actually landed so a CI failure is
+        # diagnosable instead of just "missing ACE".
+        Write-Host "[verify-installer] $installDirectory contains:"
+        Get-ChildItem -LiteralPath $installDirectory |
+            Select-Object -ExpandProperty Name |
+            ForEach-Object { Write-Host "  $_" }
+        Write-Host "[verify-installer] actual ACL:"
+        $icacls = Join-Path $env:WINDIR "System32\icacls.exe"
+        if (Test-Path -LiteralPath $icacls -PathType Leaf) {
+            (& $icacls $installDirectory | Out-String) -split "`r?`n" |
+                Where-Object { $_ -ne "" } |
+                ForEach-Object { Write-Host "  $_" }
+        } else {
+            Write-Host "  icacls.exe not found at $icacls"
+        }
+        Write-AclDiagnostics -Path $installDirectory -Sid $appContainerSid
         throw "the install directory lacks an inheritable ALL APPLICATION PACKAGES read/execute ACE"
     }
     foreach ($path in @($appExecutable, $runtime, $appAsar)) {

@@ -54,9 +54,15 @@ gh run watch
   （`*S-1-15-2-1`）只读权限；NSIS 解包不保留 ACL，因此
   `apps/desktop/build-resources/installer.nsh` 在 `customInstall` 中再次递归
   授予同一 ACE。缺少该权限时 Electron 的沙箱渲染进程会拒绝启动。
+- `customInstall` 从原生的 `%WINDIR%\Sysnative\icacls.exe` 调用 icacls（该
+  别名只在 WOW64 下存在），从而绕开 32 位安装器的 `$SYSDIR` 重定向。授权失败
+  会以非零码中止安装：`9001` 为找不到 icacls，`9002` 为 icacls 无法启动，
+  `9003` 为超时，其余情况原样透传 icacls 的退出码。nsExec 在启动失败时压栈的是
+  字符串 `error` 而非数字，因此状态必须用 `StrCmp` 比较，不能用 `IntCmp`。
 - 冒烟脚本 `apps/desktop/scripts/verify-installer.ps1` 会静默安装，核对卸载
   注册项的 `DisplayVersion`、安装目录的可继承 ACL、主程序 / `app.asar` /
   运行时的读执行 ACE、应用的 `ProductVersion` 与运行时 `probe`，最后静默卸载。
+  ACL 断言失败时会打印安装目录内容与实际 ACL，便于定位安装器侧的问题。
 - 未签名，SmartScreen 可能提示；没有 MSI、Windows ARM64 或自动更新。
 
 ### macOS
