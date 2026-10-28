@@ -24,8 +24,15 @@
 !ifndef VIREALM_ACL_INSTALLER_NSH
 !define VIREALM_ACL_INSTALLER_NSH
 
-Var virealmAclTool
-Var virealmAclFailure
+; electron-builder compiles the installer twice: once with BUILD_UNINSTALLER
+; defined to emit the uninstaller stub, then again for the real installer. The
+; static install section (which inserts customInstall) is excluded from the
+; first pass, so these variables would be declared but never used there, and
+; makensis runs with -WX, turning warning 6001 into a build failure.
+!ifndef BUILD_UNINSTALLER
+  Var virealmAclTool
+  Var virealmAclFailure
+!endif
 
 !macro customInstall
   ; NSIS extracts files from an archive and does not preserve the ACL that
